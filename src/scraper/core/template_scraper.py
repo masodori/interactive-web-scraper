@@ -374,3 +374,243 @@ class TemplateScraper(BaseScraper):
                     self.logger.error(f"An error occurred during {fmt.value} export: {e}", exc_info=True)
             else:
                 self.logger.warning(f"No exporter found for format: {fmt.value}")
+
+    # Enhanced detail page extraction methods for template_scraper.py
+
+    def _extract_detail_data_smart(self, detail_rules) -> Dict[str, Any]:
+        """Smart extraction of detail data with multiple strategies and fallbacks."""
+        detail_data = {}
+        
+        # Get all text content for pattern matching fallback
+        page_text = self._get_page_text_content()
+        
+        for field_name, selector in detail_rules.fields.items():
+            value = None
+            
+            # Strategy 1: Try the original selector (after fixing)
+            if selector and not selector.endswith('>'):
+                value = self._try_selector_extraction(selector, field_name)
+            
+            # Strategy 2: Try common selectors for this field type
+            if not value:
+                value = self._try_common_selectors(field_name)
+            
+            # Strategy 3: Pattern matching in page text
+            if not value:
+                value = self._extract_by_pattern_enhanced(field_name, page_text)
+            
+            # Strategy 4: Try fallback selectors if defined
+            if not value and hasattr(detail_rules, 'fallback_selectors'):
+                fallback_list = detail_rules.fallback_selectors.get(
+                    self._get_field_category(field_name), []
+                )
+                for fallback_sel in fallback_list:
+                    value = self._try_selector_extraction(fallback_sel, field_name)
+                    if value:
+                        break
+            
+            if value:
+                detail_data[field_name] = value
+                self.logger.debug(f"✅ Extracted {field_name}: {value[:50]}...")
+            else:
+                self.logger.debug(f"❌ Could not extract {field_name}")
+        
+        return detail_data
+
+
+    def _try_selector_extraction(self, selector: str, field_name: str) -> Optional[str]:
+        """Try to extract using a selector with error handling."""
+        try:
+            # Clean selector first
+            selector = selector.strip().rstrip('>')
+            
+            # For numbered fields (Education1, Education2), extract the number
+            match = re.search(r'(\d+)$', field_name)
+            if match:
+                number = int(match.group(1))
+                base_field = field_name[:-len(match.group(1))]
+                
+                # Try to get multiple elements and pick the nth one
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                if len(elements) >= number:
+                    return elements[number-1].text.strip()
+            else:
+                # Standard extraction
+                element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                return element.text.strip()
+        except Exception as e:
+            self.logger.debug(f"Selector failed for {field_name}: {selector} - {e}")
+            return None
+
+
+    def _try_common_selectors(self, field_name: str) -> Optional[str]:
+        """Try common selector patterns based on field name."""
+        common_selectors = {
+            'name': ['.lawyer-name', '.attorney-name', 'h1.name', '.profile-name'],
+            'email': ['a[href^="mailto:"]', '.email a', '.contact-email a'],
+            'phone': ['a[href^="tel:"]', '.phone', '.telephone', '.contact-phone'],
+            'education': ['.education li', '.bio-education li', '.credentials li'],
+            'bar': ['.bar-admissions', '.admissions', '.credentials'],
+            'bio': ['.bio-content', '.biography', '.overview', '.bio-text'],
+            'practice': ['.practice-areas', '.practices', '.expertise'],
+            'office': ['.office', '.location', '.office-location']
+        }
+        
+        # Determine field category
+        field_lower = field_name.lower()
+        for category, selectors in common_selectors.items():
+            if category in field_lower:
+                for selector in selectors:
+                    try:
+                        if 'education' in category and field_name[-1].isdigit():
+                            # Handle numbered education fields
+                            index = int(field_name[-1]) - 1
+                            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                            if len(elements) > index:
+                                return elements[index].text.strip()
+                        else:
+                            element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                            return element.text.strip()
+                    except:
+                        continue
+        
+        return None
+
+
+    def _get_page_text_content(self) -> str:
+        """Get all text content from main content areas."""
+        content_selectors = [
+            'main', 'article', '.content', '#content', 
+            '.main-content', '.page-content', '[role="main"]',
+            '.lawyer-detail', '.attorney-detail', '.profile-detail'
+        ]
+        
+        for selector in content_selectors:
+            try:
+                element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                return element.text
+            except:
+                continue
+        
+        # Fallback to body
+        try:
+            return self.driver.find_element(By.TAG_NAME, 'body').text
+        except:
+            return ""
+
+
+    def _extract_by_pattern_enhanced(self, field_name: str, page_text: str) -> Optional[str]:
+        """Enhanced pattern matching with better education and credentials extraction."""
+        field_lower = field_name.lower()
+        
+        # Email pattern
+        if 'email' in field_lower:
+            pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            match = re.search(pattern, page_text)
+            return match.group(0) if match else None
+        
+        # Phone pattern (more flexible)
+        elif 'phone' in field_lower:
+            patterns = [
+                r'(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})',
+                r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+                r'(?:Tel|Phone|T|P):\s*([\d\s\-\.\(\)]+)'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    return match.group(0).strip()
+        
+        # Education extraction (improved)
+        elif 'education' in field_lower:
+            # Look for education section
+            edu_section_pattern = r'(?:Education|Academic Background|Credentials)[:\s]*\n((?:.*\n){0,10})'
+            section_match = re.search(edu_section_pattern, page_text, re.IGNORECASE)
+            
+            if section_match:
+                edu_text = section_match.group(1)
+            else:
+                edu_text = page_text
+            
+            # Extract degree patterns
+            degree_patterns = [
+                r'((?:J\.D\.|JD|LL\.M\.|LLM|B\.A\.|BA|B\.S\.|BS|M\.A\.|MA|M\.S\.|MS|Ph\.D\.|PhD|M\.B\.A\.|MBA)[^,\n]*(?:,\s*\d{4})?)',
+                r'([A-Z][a-z]+ (?:University|College|School|Institute)[^,\n]*(?:,\s*\d{4})?)',
+                r'((?:Bachelor|Master|Doctor|Juris Doctor)[^,\n]*(?:,\s*\d{4})?)'
+            ]
+            
+            all_matches = []
+            for pattern in degree_patterns:
+                matches = re.findall(pattern, edu_text, re.IGNORECASE)
+                all_matches.extend(matches)
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_matches = []
+            for match in all_matches:
+                if match not in seen:
+                    seen.add(match)
+                    unique_matches.append(match)
+            
+            # Return based on field number
+            if field_name.endswith('1') and unique_matches:
+                return unique_matches[0]
+            elif field_name.endswith('2') and len(unique_matches) > 1:
+                return unique_matches[1]
+            elif unique_matches:
+                return ' | '.join(unique_matches[:2])
+        
+        # Bar admissions / Credentials
+        elif 'bar' in field_lower or 'cred' in field_lower or 'admission' in field_lower:
+            # Look for bar admission section
+            bar_patterns = [
+                r'(?:Bar Admissions?|Admitted to (?:Practice|Bar)|Licensed)[:\s]*\n((?:.*\n){0,5})',
+                r'((?:New York|California|Texas|Florida|Illinois)[^,\n]*(?:Bar|Court)[^,\n]*)',
+                r'((?:U\.S\.|United States)[^,\n]*Court[^,\n]*)'
+            ]
+            
+            admissions = []
+            for pattern in bar_patterns:
+                matches = re.findall(pattern, page_text, re.IGNORECASE)
+                admissions.extend(matches)
+            
+            if admissions:
+                # Clean and deduplicate
+                cleaned = [a.strip() for a in admissions if len(a.strip()) > 5]
+                return ' | '.join(cleaned[:5])  # Limit to 5 entries
+        
+        # Bio/Overview
+        elif 'bio' in field_lower or 'overview' in field_lower:
+            # Look for bio section
+            bio_patterns = [
+                r'(?:Biography|Overview|About)[:\s]*\n((?:.*\n){1,5})',
+                r'^([A-Z][^.!?]*(?:[.!?]\s+[A-Z][^.!?]*){2,5})'  # First few sentences
+            ]
+            
+            for pattern in bio_patterns:
+                match = re.search(pattern, page_text, re.MULTILINE)
+                if match:
+                    bio_text = match.group(1).strip()
+                    # Clean up and limit length
+                    bio_text = re.sub(r'\s+', ' ', bio_text)
+                    return bio_text[:500] + '...' if len(bio_text) > 500 else bio_text
+        
+        return None
+
+
+    def _get_field_category(self, field_name: str) -> str:
+        """Determine the category of a field for fallback selectors."""
+        field_lower = field_name.lower()
+        
+        if any(term in field_lower for term in ['education', 'school', 'degree']):
+            return 'education'
+        elif any(term in field_lower for term in ['bar', 'admission', 'license', 'cred']):
+            return 'bar_admissions'
+        elif 'email' in field_lower:
+            return 'email'
+        elif 'phone' in field_lower or 'tel' in field_lower:
+            return 'phone'
+        elif 'bio' in field_lower or 'overview' in field_lower:
+            return 'bio'
+        
+        return 'general'
