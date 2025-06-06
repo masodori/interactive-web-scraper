@@ -156,20 +156,28 @@ class BatchProgress:
 class LoadStrategyConfig:
     """Configuration for content loading strategy"""
     type: LoadStrategy = LoadStrategy.AUTO
-    max_scrolls: int = 10
-    max_clicks: int = 10
+    # DEPRECATED: max_scrolls: int = 10
+    # DEPRECATED: max_clicks: int = 10
     pause_time: float = 2.0
     button_selector: Optional[str] = None
     pagination_next_selector: Optional[str] = None
     wait_for_element: Optional[str] = None
     
+    # New fields for smart detection
+    consecutive_failure_limit: int = 3 # Stop after N clicks with no new items
+    extended_wait_multiplier: float = 2.0 # Wait N times longer if button exists but no items loaded
+
     @classmethod
     def from_dict(cls, data: dict) -> 'LoadStrategyConfig':
-        """Create from dictionary"""
+        """Create from dictionary, ignoring deprecated fields"""
+        # Remove deprecated fields to avoid errors
+        data.pop('max_scrolls', None)
+        data.pop('max_clicks', None)
+        
         if 'type' in data and isinstance(data['type'], str):
             data['type'] = LoadStrategy(data['type'])
         return cls(**data)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary"""
         result = asdict(self)

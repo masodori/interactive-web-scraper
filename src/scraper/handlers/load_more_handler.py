@@ -6,14 +6,18 @@ of new items and automatic continuation.
 
 import time
 import logging
-from typing import Optional, Set, List
+from typing import Optional
 
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import (
+    NoSuchElementException, 
+    StaleElementReferenceException, 
+    ElementNotInteractableException
+)
 
 from ..config import Config
-from ..models import LoadStrategyConfig
+from ..models import LoadStrategy, LoadStrategyConfig
 
 
 class LoadMoreHandler:
@@ -37,299 +41,195 @@ class LoadMoreHandler:
 
         Args:
             strategy: The configuration for the loading strategy.
-            item_selector: CSS selector for items to count (for smart detection)
+            item_selector: CSS selector for items to count for smart detection.
         """
         strategy_type = strategy.type
         self.logger.info(f"Executing load strategy: {strategy_type.value}")
 
-        if strategy_type == strategy_type.SCROLL:
-            count = self.handle_scroll_smart(strategy.max_scrolls, strategy.pause_time, item_selector)
+        if not item_selector:
+            self.logger.warning("No item_selector provided for smart loading. Strategy may not be effective.")
+
+        if strategy_type == LoadStrategy.SCROLL:
+            # This can also be enhanced with a similar smart detection logic
+            count = self.handle_scroll_smart(pause_time=strategy.pause_time, item_selector=item_selector, consecutive_failure_limit=strategy.consecutive_failure_limit)
             self.logger.info(f"Performed {count} scroll actions.")
-        elif strategy_type == strategy_type.BUTTON and strategy.button_selector:
+        elif strategy_type == LoadStrategy.BUTTON and strategy.button_selector:
             count = self.handle_button_click_smart(
-                strategy.button_selector,
-                strategy.max_clicks,
-                strategy.pause_time,
-                item_selector
+                selector=strategy.button_selector,
+                item_selector=item_selector,
+                strategy_config=strategy
             )
             self.logger.info(f"Clicked 'load more' button {count} times.")
-        elif strategy_type == strategy_type.AUTO:
-            self.auto_detect_and_load_smart(item_selector)
+        elif strategy_type == LoadStrategy.AUTO:
+            self.auto_detect_and_load_smart(item_selector, strategy)
         else:
             self.logger.debug("No active load strategy to execute.")
 
-    def handle_scroll_smart(self, max_scrolls: int, pause_time: float, item_selector: str = None) -> int:
+    def _is_button_still_active(self, selector: str) -> bool:
+        """Checks if the 'load more' button still exists and is clickable."""
+        try:
+            button = self.driver.find_element(By.CSS_SELECTOR, selector)
+            return button.is_displayed() and button.is_enabled()
+        except (NoSuchElementException, StaleElementReferenceException):
+            return False
+
+    def handle_button_click_smart(
+        self,
+        selector: str,
+        item_selector: str,
+        strategy_config: LoadStrategyConfig
+    ) -> int:
         """
-        Handles infinite scrolling with smart detection of new content.
+        Repeatedly clicks a 'load more' button until no new items are loaded
+        or the button disappears.
 
         Args:
-            max_scrolls: Maximum number of times to scroll
-            pause_time: Delay between scrolls
-            item_selector: CSS selector to count items
+            selector: CSS selector for the button.
+            item_selector: CSS selector to count items to verify loading.
+            strategy_config: The configuration for the loading strategy.
 
         Returns:
-            Number of scroll actions performed
-        """
-        scrolls_performed = 0
-        last_height = self.driver.execute_script("return document.body.scrollHeight")
-        last_item_count = self._count_items(item_selector) if item_selector else 0
-        no_new_items_count = 0
-
-        for i in range(max_scrolls):
-            # Scroll to bottom
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(pause_time)
-
-            new_height = self.driver.execute_script("return document.body.scrollHeight")
-            new_item_count = self._count_items(item_selector) if item_selector else 0
-            scrolls_performed += 1
-
-            # Check if we got new content
-            if item_selector:
-                if new_item_count > last_item_count:
-                    self.logger.info(f"Scroll {scrolls_performed}: Found {new_item_count - last_item_count} new items (total: {new_item_count})")
-                    last_item_count = new_item_count
-                    no_new_items_count = 0
-                else:
-                    no_new_items_count += 1
-                    if no_new_items_count >= 3:
-                        self.logger.info(f"No new items found after 3 scrolls. Stopping at {new_item_count} items.")
-                        break
-            else:
-                # Fallback to height check
-                if new_height == last_height:
-                    self.logger.info(f"Page height stable after {scrolls_performed} scrolls.")
-                    break
-                last_height = new_height
-        
-        return scrolls_performed
-
-    def handle_button_click_smart(self, selector: str, max_clicks: int, pause_time: float, item_selector: str = None) -> int:
-        """
-        Repeatedly clicks 'load more' button with smart detection.
-
-        Args:
-            selector: CSS selector for the button
-            max_clicks: Maximum number of times to click
-            pause_time: Delay between clicks
-            item_selector: CSS selector to count items
-
-        Returns:
-            Number of successful clicks
+            Number of successful clicks.
         """
         clicks = 0
-        last_item_count = self._count_items(item_selector) if item_selector else 0
-        no_new_items_count = 0
+        consecutive_no_new_items = 0
+        pause_time = strategy_config.pause_time
         
-        self.logger.info(f"Starting with {last_item_count} items")
+        while True:
+            current_count = self._count_items(item_selector)
+            self.logger.info(f"Currently {current_count} items. Checking for 'load more' button.")
 
-        for attempt in range(max_clicks):
             try:
-                # Find the button
-                button = self._find_load_more_button(selector)
-                
-                if not button:
-                    self.logger.info("Load more button not found.")
-                    break
-                
+                button = self.driver.find_element(By.CSS_SELECTOR, selector)
                 if not (button.is_displayed() and button.is_enabled()):
-                    self.logger.info("Load more button not clickable.")
+                    self.logger.info("Load more button found but is not interactable. Stopping.")
                     break
                 
-                # Click the button
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
-                time.sleep(0.5)
+                # Click the button and wait
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", button)
+                time.sleep(0.5)  # Brief pause before click
                 self.driver.execute_script("arguments[0].click();", button)
                 clicks += 1
-                
-                # Wait for content to load
+                self.logger.info(f"Clicked 'load more' button (Click #{clicks}). Waiting {pause_time}s for new items...")
                 time.sleep(pause_time)
                 
-                # Check for new items
-                new_item_count = self._count_items(item_selector) if item_selector else 0
+                new_count = self._count_items(item_selector)
                 
-                if item_selector:
-                    if new_item_count > last_item_count:
-                        items_loaded = new_item_count - last_item_count
-                        self.logger.info(f"Click {clicks}: Loaded {items_loaded} new items (total: {new_item_count})")
-                        last_item_count = new_item_count
-                        no_new_items_count = 0
-                    else:
-                        no_new_items_count += 1
-                        self.logger.warning(f"Click {clicks}: No new items loaded (still {new_item_count})")
+                if new_count > current_count:
+                    # Success: new items were loaded
+                    consecutive_no_new_items = 0
+                    self.logger.info(f"Success! Loaded {new_count - current_count} new items. Total: {new_count}.")
+                else:
+                    # Failure: no new items loaded
+                    consecutive_no_new_items += 1
+                    self.logger.warning(f"No new items detected after click #{clicks}. Consecutive failures: {consecutive_no_new_items}.")
+                    
+                    if consecutive_no_new_items >= strategy_config.consecutive_failure_limit:
+                        self.logger.info(f"Reached consecutive failure limit of {strategy_config.consecutive_failure_limit}.")
                         
-                        if no_new_items_count >= 3:
-                            self.logger.info("No new items after 3 clicks. Assuming all content loaded.")
-                            break
-                
-            except (NoSuchElementException, StaleElementReferenceException) as e:
-                self.logger.info(f"Button error: {e}. Likely all content loaded.")
+                        # Last check: is the button still active? If so, wait longer and try one more time.
+                        if self._is_button_still_active(selector):
+                            extended_wait = pause_time * strategy_config.extended_wait_multiplier
+                            self.logger.warning(f"Button is still active. Waiting {extended_wait}s for a slow network...")
+                            time.sleep(extended_wait)
+                            
+                            # If still no new items after extended wait, we're done
+                            if self._count_items(item_selector) == new_count:
+                                self.logger.info("No new items after extended wait. Stopping.")
+                                break
+                            else: # New items appeared, reset and continue
+                                consecutive_no_new_items = 0
+
+                        else:
+                            self.logger.info("Button is no longer active. Assuming all content is loaded.")
+                            break # Exit loop
+            
+            except (NoSuchElementException, StaleElementReferenceException):
+                self.logger.info("Load more button no longer found. Assuming all content is loaded.")
+                break
+            except ElementNotInteractableException:
+                self.logger.warning("Button not interactable. Assuming it's covered or disabled. Stopping.")
                 break
             except Exception as e:
-                self.logger.error(f"Unexpected error clicking button: {e}")
+                self.logger.error(f"An unexpected error occurred during button click: {e}", exc_info=True)
                 break
-        
-        self.logger.info(f"Completed with {clicks} clicks, loaded {self._count_items(item_selector)} total items")
+                
+        self.logger.info(f"Loading finished. Total clicks: {clicks}, Final item count: {self._count_items(item_selector)}")
         return clicks
 
-    def auto_detect_and_load_smart(self, item_selector: str = None):
-        """
-        Automatically detects and uses the best loading strategy.
-        """
+    def auto_detect_and_load_smart(self, item_selector: str, strategy: LoadStrategyConfig):
+        """Automatically detects and uses the best loading strategy."""
         self.logger.info("Auto-detecting load strategy...")
         
-        # First, try to find any load more buttons
-        button_found = False
-        
-        for keyword in self.config.LOAD_MORE_KEYWORDS:
-            try:
-                xpath = f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword.lower()}')] | //a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword.lower()}')]"
-                elements = self.driver.find_elements(By.XPATH, xpath)
-                
-                for button in elements:
-                    if button.is_displayed() and button.is_enabled():
-                        selector = self._get_stable_selector(button)
-                        if selector:
-                            self.logger.info(f"Found load more button: {button.text}")
-                            self.handle_button_click_smart(
-                                selector, 
-                                self.config.LOAD_MORE_MAX_RETRIES * 5,  # More attempts for auto
-                                self.config.LOAD_MORE_PAUSE_TIME,
-                                item_selector
-                            )
-                            button_found = True
-                            break
-                
-                if button_found:
-                    break
-                    
-            except Exception as e:
-                self.logger.debug(f"Error searching for button with keyword '{keyword}': {e}")
-                continue
-        
-        if not button_found:
-            # Try common button selectors
-            common_selectors = [
-                "button.wpgb-button",
-                "button.load-more",
-                "a.load-more",
-                ".load-more-button",
-                "[class*='load'][class*='more']"
-            ]
-            
-            for selector in common_selectors:
-                try:
-                    button = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if button.is_displayed() and button.is_enabled():
-                        self.logger.info(f"Found button with selector: {selector}")
-                        self.handle_button_click_smart(
-                            selector,
-                            self.config.LOAD_MORE_MAX_RETRIES * 5,
-                            self.config.LOAD_MORE_PAUSE_TIME,
-                            item_selector
-                        )
-                        button_found = True
-                        break
-                except:
-                    continue
-        
-        if not button_found:
-            # Fallback to scrolling
-            self.logger.info("No load more button found, trying scroll strategy...")
-            self.handle_scroll_smart(
-                self.config.LOAD_MORE_MAX_RETRIES * 2,
-                self.config.LOAD_MORE_PAUSE_TIME,
-                item_selector
-            )
-
-    def _find_load_more_button(self, selector: str):
-        """
-        Finds the load more button with multiple strategies.
-        """
-        try:
-            # Direct CSS selector
-            return self.driver.find_element(By.CSS_SELECTOR, selector)
-        except:
-            try:
-                # Try XPath if it looks like one
-                if selector.startswith("//"):
-                    return self.driver.find_element(By.XPATH, selector)
-            except:
-                pass
-        
-        # Try variations
-        variations = [
-            selector,
-            f"{selector}:visible",
-            f"{selector}:enabled",
-            f"{selector}:not(:disabled)"
+        # Try to find any common load more buttons
+        button_selectors_to_try = [
+            "button.wpgb-button", "button.load-more", "a.load-more",
+            ".load-more-button", "[class*='load'][class*='more']"
         ]
         
-        for variant in variations:
+        # Add keywords search
+        for keyword in self.config.LOAD_MORE_KEYWORDS:
+             button_selectors_to_try.append(f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword.lower()}')]")
+             button_selectors_to_try.append(f"//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword.lower()}')]")
+
+        for selector in button_selectors_to_try:
             try:
-                elements = self.driver.find_elements(By.CSS_SELECTOR, variant)
-                for elem in elements:
-                    if elem.is_displayed() and elem.is_enabled():
-                        return elem
-            except:
-                continue
-        
-        return None
+                # Use a very short timeout to quickly check for existence
+                self.driver.implicitly_wait(1)
+                by = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR
+                button = self.driver.find_element(by, selector)
+                
+                if button.is_displayed() and button.is_enabled():
+                    self.driver.implicitly_wait(self.config.IMPLICIT_WAIT) # Reset wait
+                    self.logger.info(f"Found potential 'load more' button with selector: {selector}")
+                    strategy.button_selector = selector
+                    self.handle_button_click_smart(selector, item_selector, strategy)
+                    return # Stop after finding one and running it
+            except NoSuchElementException:
+                continue # Selector not found, try next
+            finally:
+                self.driver.implicitly_wait(self.config.IMPLICIT_WAIT) # Always reset wait
+
+        # Fallback to scrolling if no button is found
+        self.logger.info("No active 'load more' button found, trying scroll strategy...")
+        self.handle_scroll_smart(pause_time=strategy.pause_time, item_selector=item_selector, consecutive_failure_limit=strategy.consecutive_failure_limit)
 
     def _count_items(self, selector: str) -> int:
-        """
-        Counts the number of items matching the selector.
-        """
+        """Counts the number of items matching the selector."""
         if not selector:
             return 0
-        
         try:
             return len(self.driver.find_elements(By.CSS_SELECTOR, selector))
         except Exception as e:
-            self.logger.debug(f"Error counting items: {e}")
+            self.logger.debug(f"Error counting items with selector '{selector}': {e}")
             return 0
 
-    def _get_stable_selector(self, element) -> Optional[str]:
-        """
-        Generates a stable CSS selector for an element.
-        """
-        try:
-            # Try ID first
-            elem_id = element.get_attribute('id')
-            if elem_id:
-                return f"#{elem_id}"
+    def handle_scroll_smart(self, pause_time: float, item_selector: str, consecutive_failure_limit: int) -> int:
+        """Handles infinite scrolling with smart detection of new content."""
+        scrolls_performed = 0
+        no_new_items_count = 0
+        last_item_count = self._count_items(item_selector)
 
-            # Try unique class combination
-            tag = element.tag_name.lower()
-            classes = element.get_attribute('class')
-            if classes:
-                class_list = classes.strip().split()
-                if class_list:
-                    return f"{tag}.{'.'.join(class_list)}"
-            
-            # Try data attributes
-            for attr in ['data-id', 'data-action', 'data-load-more']:
-                value = element.get_attribute(attr)
-                if value:
-                    return f"{tag}[{attr}='{value}']"
-            
-            return None
-        except:
-            return None
+        while no_new_items_count < consecutive_failure_limit:
+            last_height = self.driver.execute_script("return document.body.scrollHeight")
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            scrolls_performed += 1
+            time.sleep(pause_time)
 
-    def wait_for_items_to_load(self, initial_count: int, selector: str, timeout: float = 10) -> bool:
-        """
-        Waits for new items to load after an action.
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            new_item_count = self._count_items(item_selector)
+
+            if new_item_count > last_item_count:
+                self.logger.info(f"Scroll {scrolls_performed}: Found {new_item_count - last_item_count} new items (total: {new_item_count})")
+                last_item_count = new_item_count
+                no_new_items_count = 0
+            # Also check if page height changed as a fallback
+            elif new_height > last_height:
+                self.logger.info(f"Scroll {scrolls_performed}: Page height changed. Continuing scroll.")
+                no_new_items_count = 0
+            else:
+                no_new_items_count += 1
+                self.logger.warning(f"No new items or height change after scroll #{scrolls_performed}. Consecutive failures: {no_new_items_count}")
         
-        Returns:
-            True if new items loaded, False otherwise
-        """
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            current_count = self._count_items(selector)
-            if current_count > initial_count:
-                return True
-            time.sleep(0.5)
-        
-        return False
+        self.logger.info(f"Scrolling finished after {scrolls_performed} scrolls and {no_new_items_count} consecutive failures.")
+        return scrolls_performed
