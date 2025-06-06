@@ -30,48 +30,46 @@ class InteractiveCLI:
         self.config = Config
         self.logger = logging.getLogger(__name__)
     
-# In src/scraper/cli.py, update the validate_template_file method around line 58:
-
-def validate_template_file(self, template_path: Path) -> Tuple[bool, str]:
-    """
-    Validate template file exists and is valid JSON.
-    
-    Args:
-        template_path: Path to template file
+    def validate_template_file(self, template_path: Path) -> Tuple[bool, str]:
+        """
+        Validate template file exists and is valid JSON.
         
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    if not template_path.exists():
-        return False, f"Template file not found: {template_path}"
-    
-    if not template_path.is_file():
-        return False, f"Template path is not a file: {template_path}"
-    
-    if template_path.suffix != '.json':
-        return False, f"Template file must be a JSON file (got {template_path.suffix})"
-    
-    # Try to load and validate JSON
-    try:
-        with open(template_path, 'r', encoding='utf-8') as f:  # ADD encoding='utf-8' HERE
-            data = json.load(f)
+        Args:
+            template_path: Path to template file
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not template_path.exists():
+            return False, f"Template file not found: {template_path}"
         
-        # Basic validation of required fields
-        required_fields = ['name', 'site_info', 'scraping_type']
-        missing_fields = [field for field in required_fields if field not in data]
+        if not template_path.is_file():
+            return False, f"Template path is not a file: {template_path}"
         
-        if missing_fields:
-            return False, f"Template missing required fields: {', '.join(missing_fields)}"
+        if template_path.suffix != '.json':
+            return False, f"Template file must be a JSON file (got {template_path.suffix})"
         
-        # Try to load as ScrapingTemplate
-        template = ScrapingTemplate.from_dict(data)
+        # Try to load and validate JSON
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Basic validation of required fields
+            required_fields = ['name', 'site_info', 'scraping_type']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                return False, f"Template missing required fields: {', '.join(missing_fields)}"
+            
+            # Try to load as ScrapingTemplate
+            template = ScrapingTemplate.from_dict(data)
+            
+        except json.JSONDecodeError as e:
+            return False, f"Invalid JSON in template file: {e}"
+        except Exception as e:
+            return False, f"Invalid template format: {e}"
         
-    except json.JSONDecodeError as e:
-        return False, f"Invalid JSON in template file: {e}"
-    except Exception as e:
-        return False, f"Invalid template format: {e}"
-    
-    return True, ""
+        return True, ""
     
     def get_user_confirmation(
         self, 
@@ -519,7 +517,7 @@ def _run_interactive_menu_safe():
                     
                     for template_path in templates:
                         try:
-                            with open(template_path, 'r') as f:
+                            with open(template_path, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
                             
                             print(f"  • {template_path.name}")
