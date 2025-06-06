@@ -3,6 +3,7 @@
 Input validation and error handling utilities for user prompts.
 """
 
+import os
 import re
 import logging
 from typing import Optional, Tuple, List, Dict, Any, Union

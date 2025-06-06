@@ -9,7 +9,7 @@ import logging
 import sys
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 import json
 
 from .core import InteractiveScraper, TemplateScraper
