@@ -22,7 +22,7 @@ A powerful, modular Python web scraper built with Selenium that supports interac
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/interactive-web-scraper.git
+git clone [https://github.com/yourusername/interactive-web-scraper.git](https://github.com/masodori/interactive-web-scraper.git)
 cd interactive-web-scraper
 
 # Create virtual environment
