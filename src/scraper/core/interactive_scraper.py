@@ -30,6 +30,49 @@ class InteractiveScraper(BaseScraper):
         self._template_creation_attempts = 0
         self._max_creation_attempts = 3
 
+    def _inject_interactive_js(self, context_message: str = "") -> bool:
+        """Injects the interactive selector JavaScript into the current page."""
+        js_path = self.config.get_js_asset_path()
+        if not js_path.exists():
+            self.logger.error(f"Interactive JS file not found at: {js_path}")
+            print(f"\n ERROR: JavaScript asset not found. Please ensure '{self.config.INTERACTIVE_JS_FILENAME}' is in the assets/js directory.")
+            return False
+        
+        with open(js_path, 'r', encoding='utf-8') as f:
+            js_code = f.read()
+
+        escaped_message = json.dumps(context_message)
+        script = f"window.scraperContextMessage = {escaped_message};\n{js_code}"
+
+        try:
+            self.driver.execute_script(script)
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to inject interactive JS: {e}")
+            return False
+
+    def _get_user_selection(self) -> Optional[Dict[str, Any]]:
+        """Waits for and retrieves a user's element selection from the browser."""
+        while True:
+            try:
+                result = self.driver.execute_script(
+                    "return document.getElementById('selected_element_data') ? document.getElementById('selected_element_data').value : null;"
+                )
+                if not result or result == 'null':
+                    time.sleep(0.5)
+                    continue
+
+                if result == "DONE_SELECTING":
+                    self.driver.execute_script("document.getElementById('selected_element_data').value = '';")
+                    return {"type": "done"}
+
+                if result != self._last_js_data_read:
+                    self._last_js_data_read = result
+                    return json.loads(result)
+            except Exception:
+                time.sleep(0.5)
+                continue
+
     def _validate_url(self, url: str) -> Tuple[bool, str]:
         """
         Validate URL format and accessibility.
