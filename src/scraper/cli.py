@@ -16,7 +16,7 @@ from .core import InteractiveScraper, TemplateScraper
 from .models import ExportFormat, ScrapingTemplate
 from .utils.logging_config import setup_logging
 from .config import Config
-
+from .core import InteractiveScraper, TemplateScraper
 
 class CLIError(Exception):
     """Custom exception for CLI errors"""
@@ -254,7 +254,10 @@ def _run_create_safe(args: argparse.Namespace = None):
 def _run_apply_safe(args: argparse.Namespace = None):
     """Safely run template application with error handling."""
     cli = InteractiveCLI()
+    engine_choice = args.engine if args and hasattr(args, 'engine') else 'selenium'
     
+    print(f"\n📋 Applying template: {template_path.name}")
+    print(f"🚀 Engine: {engine_choice}")
     # Get template path
     if args and hasattr(args, 'template'):
         template_path = args.template
@@ -311,7 +314,7 @@ def _run_apply_safe(args: argparse.Namespace = None):
     # Apply template
     scraper = None
     try:
-        scraper = TemplateScraper(headless=headless)
+        scraper = TemplateScraper(engine=engine_choice, headless=headless)
         result = scraper.apply_template(str(template_path), export_formats)
         
         # Display results
@@ -632,6 +635,38 @@ def main():
                 default=[ExportFormat.JSON.value],
                 help='Export format(s) for scraped data (default: json)'
             )
+            # ...
+            # Apply command
+            apply_parser = subparsers.add_parser(
+                'apply', 
+                help='Apply an existing template to scrape data'
+            )
+            apply_parser.add_argument(
+                'template', 
+                type=Path, 
+                help='Path to the template JSON file'
+            )
+            # ADD THE NEW --engine ARGUMENT HERE
+            apply_parser.add_argument(
+                '--engine',
+                choices=['selenium', 'requests'],
+                default='selenium',
+                help='The scraping engine to use. Use "requests" for static sites for better performance.'
+            )
+            apply_parser.add_argument(
+                '--headless', 
+                action='store_true', 
+                help='Run browser in headless mode (no window) - only applies to selenium engine'
+            )
+            apply_parser.add_argument(
+                '--export',
+                nargs='+',
+                choices=[f.value for f in ExportFormat],
+                default=[ExportFormat.JSON.value],
+                help='Export format(s) for scraped data (default: json)'
+            )
+
+
             apply_parser.set_defaults(func=_run_apply_safe)
             
             # Batch command
