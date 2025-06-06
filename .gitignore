@@ -1,0 +1,73 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+downloads/
+eggs/
+*.egg-info/
+sdist/
+wheels/
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Log and output files from your scraper
+logs/
+output/
+# You might want to keep the .gitkeep files if you want to track the empty directories
+# If so, uncomment the following lines:
+# !logs/.gitkeep
+# !output/.gitkeep
+
+
+# Databases
+*.db
+*.sqlite3
+
+# Test and coverage reports
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-generated files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*~
+*.stackdump
+
+# Secrets - Never commit secrets!
+*.env
+.env.*
+secrets.py
+secrets.ini
