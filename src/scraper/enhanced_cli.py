@@ -11,6 +11,7 @@ from pathlib import Path
 
 # from .core import InteractiveScraper  # Removed - using EnhancedInteractiveScraper instead
 from .core.enhanced_interactive_scraper import EnhancedInteractiveScraper
+from .core.multi_engine_interactive_scraper import MultiEngineInteractiveScraper
 from .core.enhanced_template_scraper import EnhancedTemplateScraper
 from .models import ExportFormat
 from .utils.logging_config import setup_logging
@@ -49,10 +50,20 @@ def _run_create_enhanced(args: argparse.Namespace = None):
             if not use_requests:
                 return
 
-        # Create enhanced interactive scraper
+        # Get engine choice
+        print("\n🔧 Select scraping engine:")
+        print("1. Selenium (Default - Full interactive selection)")
+        print("2. Playwright (Faster - Full interactive selection)")
+        print("3. Requests (No JavaScript - Manual configuration only)")
+        
+        engine_choice = input("\nSelect engine (1-3) [1]: ").strip() or "1"
+        engine_map = {"1": "selenium", "2": "playwright", "3": "requests"}
+        engine = engine_map.get(engine_choice, "selenium")
+        
+        # Create enhanced interactive scraper with selected engine
         scraper = None
         try:
-            scraper = EnhancedInteractiveScraper()
+            scraper = MultiEngineInteractiveScraper(engine=engine)
             scraper.create_template()
         except KeyboardInterrupt:
             print("\n⚠️  Template creation cancelled by user.")

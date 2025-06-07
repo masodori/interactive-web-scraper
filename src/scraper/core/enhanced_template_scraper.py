@@ -1,612 +1,366 @@
-# src/scraper/core/enhanced_interactive_scraper.py
+# src/scraper/core/enhanced_template_scraper.py
 """
-Enhanced Interactive Scraper with advanced features integrated into template creation.
+Enhanced template scraper that integrates all improvements:
+- Pattern-based extraction
+- Playwright engine support
+- Rate limiting
+- Template migration
+- Advanced selector strategies
 """
 
-import time
-import json
 import logging
+import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
-from urllib.parse import urlparse
 from datetime import datetime
+from typing import List, Optional, Dict, Any
+from concurrent.futures import ThreadPoolExecutor
 
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import (
-    WebDriverException,
-    InvalidArgumentException,
-    NoSuchElementException,
-)
-
-from .interactive_scraper import InteractiveScraper
 from ..models import (
     ScrapingTemplate,
-    SiteInfo,
-    ScrapingType,
-    TemplateRules,
-    LoadStrategy,
-    LoadStrategyConfig,
+    ScrapeResult,
+    ScrapedItem,
+    ExportFormat,
+    ScrapingType
 )
-from ..utils.selectors import (
-    normalize_selector,
-    generalize_selector,
-    make_relative_selector,
-)
-from ..utils.input_validators import InputValidator, PromptFormatter
+from ..config import Config
+from ..utils.rate_limiter import DomainRateLimiter, RATE_LIMIT_PRESETS
+from ..utils.template_migration import TemplateMigrationManager
+from ..extractors.enhanced_element_extractor import EnhancedElementExtractor
 from ..extractors.pattern_extractor import PatternExtractor
-from ..extractors.advanced_selectors import AdvancedSelectors
+
+# Import engine-specific components
+from .base_scraper import BaseScraper
+from .requests_scraper import RequestScraper
+from .playwright_scraper import PlaywrightScraper, PlaywrightExtractor
+from .template_scraper import TemplateScraper
 
 
-class EnhancedInteractiveScraper(InteractiveScraper):
-    """Enhanced interactive scraper with advanced features"""
+class EnhancedTemplateScraper(TemplateScraper):
+    """Enhanced template scraper with all new features"""
     
-    def __init__(self):
-        """Initialize enhanced scraper"""
-        super().__init__()
+    def __init__(self, engine: str = 'selenium', headless: bool = True, 
+                 rate_limit_preset: str = 'respectful_bot'):
+        """
+        Initialize enhanced scraper
+        
+        Args:
+            engine: Scraping engine ('selenium', 'requests', 'playwright')
+            headless: Run browser in headless mode
+            rate_limit_preset: Rate limiting preset name
+        """
+        # Initialize base class
+        super().__init__(engine, headless)
+        
+        # Initialize rate limiter
+        rate_config = RATE_LIMIT_PRESETS.get(rate_limit_preset)
+        self.rate_limiter = DomainRateLimiter(rate_config)
+        
+        # Initialize pattern extractor
         self.pattern_extractor = PatternExtractor()
-        self.input_validator = InputValidator()
-        self.prompt_formatter = PromptFormatter()
         
-    def create_template(self):
-        """Enhanced template creation with all new features"""
-        self._template_creation_attempts += 1
+        # Initialize migration manager
+        self.migration_manager = TemplateMigrationManager()
         
-        if self._template_creation_attempts > self._max_creation_attempts:
-            print(f"❌ Maximum template creation attempts ({self._max_creation_attempts}) exceeded.")
-            return
+        # Override extractors with enhanced versions
+        if self.engine == 'selenium':
+            self.extractor = EnhancedElementExtractor(self.scraper.driver)
+        elif self.engine == 'playwright':
+            self._init_playwright()
         
-        print("\n" + "="*50)
-        print("🔧 Enhanced Interactive Template Creation v2.0")
-        print("="*50)
-        
+        self.logger.info(f"Enhanced scraper initialized with {engine} engine")
+    
+    def _init_playwright(self):
+        """Initialize Playwright components"""
         try:
-            # Step 1: Get and validate URL
-            url = self._get_url_with_validation()
-            if not url:
-                return
+            self.playwright_scraper = PlaywrightScraper(
+                headless=self.headless,
+                browser_type='chromium'
+            )
+            # Run async initialization
+            asyncio.run(self.playwright_scraper._init_browser())
+            self.playwright_extractor = PlaywrightExtractor(self.playwright_scraper.page)
+            self.logger.info("Playwright engine initialized")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Playwright: {e}")
+            raise
+    
+    def apply_template(self, template_path: str, 
+                      export_formats: Optional[List[ExportFormat]] = None,
+                      auto_migrate: bool = True) -> ScrapeResult:
+        """
+        Apply template with automatic migration and enhancements
+        
+        Args:
+            template_path: Path to template file
+            export_formats: Export formats
+            auto_migrate: Automatically migrate old templates
             
-            # Step 2: Select engine
-            engine = self._select_engine()
-            if not engine:
-                return
+        Returns:
+            Scraping results
+        """
+        # Load and potentially migrate template
+        template = ScrapingTemplate.load(template_path)
+        
+        if auto_migrate and self.migration_manager.needs_migration(template.to_dict()):
+            self.logger.info("Migrating template to latest version")
+            template_dict = self.migration_manager.migrate_template(template.to_dict())
+            template = ScrapingTemplate.from_dict(template_dict)
             
-            # For requests engine, we can't do interactive selection
-            if engine == 'requests':
-                print("\n⚠️  Note: Requests engine doesn't support JavaScript or interactive selection.")
-                print("   It's best for static HTML sites. Consider using Selenium or Playwright for dynamic sites.")
-                
-                continue_anyway = self._get_choice_input(
-                    "Continue with requests engine?",
-                    {"y": "Yes (I understand the limitations)", "n": "No (choose different engine)"},
-                    default="n"
-                )
-                
-                if continue_anyway != "y":
-                    return self.create_template()
-            
-            # Step 3: Navigate to URL (only for Selenium engine)
-            if engine == 'selenium':
-                print(f"\n🌐 Navigating to {url}...")
-                if not self._safe_navigate(url):
-                    retry = self._get_choice_input(
-                        "Failed to navigate to URL. Would you like to try a different URL?",
-                        {"y": "Yes", "n": "No"},
-                        default="y"
-                    )
-                    if retry == "y":
-                        return self.create_template()
-                    else:
-                        return
-                
-                print("✅ Page loaded successfully!")
+            # Save migrated template
+            template.save(template_path)
+        
+        # Check if template engine matches scraper engine
+        template_engine = getattr(template, 'engine', 'selenium')
+        if template_engine != self.engine:
+            self.logger.warning(f"Template engine ({template_engine}) doesn't match scraper engine ({self.engine})")
+            # Respect the template's engine choice by reinitializing if needed
+            if template_engine in ['selenium', 'requests', 'playwright']:
+                self.__init__(engine=template_engine, headless=self.headless, rate_limit_preset='respectful_bot')
+        
+        # Check rate limit configuration
+        template_dict = template.to_dict()
+        if template_dict.get('rate_limiting', {}).get('enabled'):
+            preset = template_dict['rate_limiting'].get('preset', 'respectful_bot')
+            if preset in RATE_LIMIT_PRESETS:
+                self.rate_limiter.default_config = RATE_LIMIT_PRESETS[preset]
+        
+        # Apply template based on engine
+        if self.engine == 'playwright':
+            return self._apply_template_playwright(template, export_formats)
+        else:
+            # For both selenium and requests engines, use parent's apply_template
+            # which already handles the engine-specific logic
+            return super().apply_template(template_path, export_formats)
+    
+    def _apply_template_playwright(self, template: ScrapingTemplate,
+                                 export_formats: Optional[List[ExportFormat]] = None) -> ScrapeResult:
+        """Apply template using Playwright engine"""
+        start_time = datetime.now()
+        items: List[ScrapedItem] = []
+        errors: List[str] = []
+        
+        async def scrape_async():
+            try:
+                # Navigate to URL
+                await self.playwright_scraper.navigate_to(template.site_info.url)
                 
                 # Handle cookies
-                print("\n🍪 Checking for cookie banners...")
-                self._handle_cookies()
-            
-            # Step 4: Create site info
-            site_info = SiteInfo(url=url)
-            
-            # Step 5: Get scraping type
-            scraping_type = self._select_scraping_type()
-            if not scraping_type:
-                return
-            
-            # Step 6: Configure rate limiting
-            rate_limiting = self._configure_rate_limiting()
-            
-            # Step 7: Create template
-            template = ScrapingTemplate(
-                name="new_template",
-                engine=engine,
-                site_info=site_info,
-                scraping_type=scraping_type,
-                list_page_rules=(
-                    TemplateRules() if scraping_type != ScrapingType.SINGLE_PAGE else None
-                ),
-                detail_page_rules=TemplateRules(),
-                version="2.1",  # Latest version
-                created_at=datetime.now().isoformat()
-            )
-            
-            # Add advanced configurations
-            template_dict = template.to_dict()
-            template_dict['rate_limiting'] = rate_limiting
-            
-            # Step 8: Define rules based on type and engine
-            if engine == 'selenium':
-                # Interactive selection for Selenium
-                if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.LIST_ONLY):
-                    if not self._define_list_rules_enhanced(template):
-                        return
+                await self.playwright_scraper.handle_cookies()
                 
-                if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.SINGLE_PAGE):
-                    if not self._define_detail_rules_enhanced(template):
-                        return
-            else:
-                # Manual configuration for non-Selenium engines
-                print("\n📝 Manual Configuration Required")
-                print("Since you're using the requests engine, you'll need to manually specify selectors.")
-                
-                if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.LIST_ONLY):
-                    self._define_list_rules_manual(template)
-                
-                if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.SINGLE_PAGE):
-                    self._define_detail_rules_manual(template)
+                # Scrape based on type
+                if template.scraping_type == ScrapingType.SINGLE_PAGE:
+                    items.extend(await self._scrape_single_page_playwright(template))
+                else:
+                    items.extend(await self._scrape_list_page_playwright(template))
+                    
+            except Exception as e:
+                self.logger.error(f"Playwright scraping error: {e}")
+                errors.append(str(e))
+        
+        # Run async scraping
+        asyncio.run(scrape_async())
+        
+        # Create result
+        result = ScrapeResult(
+            template_name=template.name,
+            start_time=start_time.isoformat(),
+            end_time=datetime.now().isoformat(),
+            total_items=len(items),
+            items=items,
+            errors=errors,
+            successful_items=0,
+            failed_items=0
+        )
+        
+        if export_formats:
+            self._export_results(result, export_formats)
+        
+        return result
+    
+    async def _scrape_single_page_playwright(self, template: ScrapingTemplate) -> List[ScrapedItem]:
+        """Scrape single page with Playwright"""
+        page_rules = template.detail_page_rules
+        if not page_rules:
+            return []
+        
+        data = {}
+        
+        # Extract using selectors
+        for field_name, selector in page_rules.fields.items():
+            value = await self.playwright_scraper.get_text(selector)
+            if value:
+                data[field_name] = value
+        
+        # Apply pattern extraction if enabled
+        if hasattr(page_rules, 'extraction_patterns'):
+            page_content = await self.playwright_scraper.get_page_content()
+            for field_name, pattern_config in page_rules.extraction_patterns.items():
+                if field_name not in data or not data[field_name]:
+                    value = self.pattern_extractor.extract(
+                        page_content,
+                        field_name,
+                        context=' '.join(pattern_config.get('context_keywords', []))
+                    )
+                    if value:
+                        data[field_name] = value
+        
+        return [ScrapedItem(
+            url=self.playwright_scraper.current_url,
+            timestamp=datetime.now().isoformat(),
+            data=data
+        )]
+    
+    async def _scrape_list_page_playwright(self, template: ScrapingTemplate) -> List[ScrapedItem]:
+        """Scrape list page with Playwright"""
+        list_rules = template.list_page_rules
+        if not list_rules:
+            return []
+        
+        items = []
+        
+        # Get all list items
+        item_selector = list_rules.repeating_item_selector
+        item_elements = await self.playwright_scraper.page.query_selector_all(item_selector)
+        
+        for element in item_elements:
+            item_data = {}
             
-            # Step 9: Configure pattern extraction
-            pattern_config = self._configure_pattern_extraction()
-            if pattern_config:
-                template_dict['detail_page_rules']['extraction_patterns'] = pattern_config
+            # Extract fields
+            for field_name, selector in list_rules.fields.items():
+                try:
+                    field_element = await element.query_selector(selector)
+                    if field_element:
+                        value = await field_element.text_content()
+                        if value:
+                            item_data[field_name] = value.strip()
+                except Exception as e:
+                    self.logger.debug(f"Error extracting {field_name}: {e}")
             
-            # Step 10: Configure fallback strategies
-            fallback_config = self._configure_fallback_strategies()
-            template_dict['fallback_strategies'] = fallback_config
+            # Get detail URL if needed
+            detail_url = None
+            if template.scraping_type == ScrapingType.LIST_DETAIL and list_rules.profile_link_selector:
+                try:
+                    link_element = await element.query_selector(list_rules.profile_link_selector)
+                    if link_element:
+                        detail_url = await link_element.get_attribute('href')
+                except Exception:
+                    pass
             
-            # Step 11: Save template
-            template_name = self._get_template_name()
-            if not template_name:
-                template_name = "my_template"
+            if item_data or detail_url:
+                items.append(ScrapedItem(
+                    url=self.playwright_scraper.current_url,
+                    timestamp=datetime.now().isoformat(),
+                    data=item_data,
+                    detail_url=detail_url
+                ))
+        
+        # Handle detail pages if needed
+        if template.scraping_type == ScrapingType.LIST_DETAIL:
+            await self._scrape_detail_pages_playwright(items, template.detail_page_rules)
+        
+        return items
+    
+    async def _scrape_detail_pages_playwright(self, items: List[ScrapedItem], detail_rules):
+        """Scrape detail pages with Playwright"""
+        for item in items:
+            if not item.detail_url:
+                continue
             
-            template_dict['name'] = f"{template_name}_{engine}"
-            template_path = self.config.TEMPLATES_DIR / f"{template_dict['name']}.json"
-            
-            # Check if file exists
-            if template_path.exists():
-                overwrite = self._get_choice_input(
-                    f"Template '{template_name}' already exists. Overwrite?",
-                    {"y": "Yes", "n": "No"},
-                    default="n"
-                )
-                if overwrite != "y":
-                    new_name = self._get_template_name("Enter new template name: ")
-                    if new_name:
-                        template_dict['name'] = f"{new_name}_{engine}"
-                        template_path = self.config.TEMPLATES_DIR / f"{template_dict['name']}.json"
-            
-            # Save template
             try:
-                with open(template_path, 'w', encoding='utf-8') as f:
-                    json.dump(template_dict, f, indent=2, ensure_ascii=False)
+                # Apply rate limiting
+                self.rate_limiter.acquire(item.detail_url)
                 
-                print(f"\n✅ Template saved successfully to: {template_path}")
-                self._display_template_summary(template_dict)
-                print("\n🎉 Enhanced template creation complete!")
+                # Navigate to detail page
+                await self.playwright_scraper.navigate_to(item.detail_url)
+                
+                # Extract data
+                detail_data = {}
+                for field_name, selector in detail_rules.fields.items():
+                    value = await self.playwright_scraper.get_text(selector)
+                    if value:
+                        detail_data[field_name] = value
+                
+                # Apply pattern extraction
+                if hasattr(detail_rules, 'extraction_patterns'):
+                    page_content = await self.playwright_scraper.get_page_content()
+                    for field_name, pattern_config in detail_rules.extraction_patterns.items():
+                        if field_name not in detail_data:
+                            value = self.pattern_extractor.extract(
+                                page_content,
+                                field_name
+                            )
+                            if value:
+                                detail_data[field_name] = value
+                
+                item.detail_data = detail_data
                 
             except Exception as e:
-                self.logger.error(f"Failed to save template: {e}")
-                print(f"❌ Failed to save template: {e}")
-                
-        except KeyboardInterrupt:
-            print("\n\n⚠️  Template creation cancelled by user.")
-        except Exception as e:
-            self.logger.error(f"Unexpected error in template creation: {e}")
-            print(f"\n❌ Unexpected error: {e}")
+                self.logger.error(f"Error scraping detail page {item.detail_url}: {e}")
+                item.errors.append(str(e))
     
-    def _select_engine(self) -> Optional[str]:
-        """Select scraping engine with detailed explanations"""
-        print("\n⚙️  Select Scraping Engine:")
-        print("="*40)
+    def _extract_detail_data_smart(self, detail_rules) -> Dict[str, Any]:
+        """
+        Override parent method to use enhanced extraction
+        """
+        if self.engine != 'selenium':
+            return super()._extract_detail_data_smart(detail_rules)
         
-        engines = {
-            "selenium": "Selenium (Default) - Full JavaScript support, interactive selection",
-            "playwright": "Playwright - Faster JavaScript handling, modern browser automation",
-            "requests": "Requests - Fast for static HTML, no JavaScript support"
-        }
+        detail_data = {}
         
-        # Check Playwright availability
-        try:
-            import playwright
-            playwright_available = True
-        except ImportError:
-            playwright_available = False
-            engines["playwright"] += " (NOT INSTALLED)"
-        
-        choice = self._get_choice_input(
-            "Select engine",
-            engines,
-            default="selenium"
-        )
-        
-        if choice == "playwright" and not playwright_available:
-            print("\n❌ Playwright is not installed. Install with:")
-            print("   pip install playwright")
-            print("   playwright install")
-            return self._select_engine()
-        
-        return choice
-    
-    def _configure_rate_limiting(self) -> Dict[str, Any]:
-        """Configure rate limiting settings"""
-        print("\n⏱️  Configure Rate Limiting:")
-        print("="*40)
-        
-        presets = {
-            "respectful_bot": "Respectful Bot - 0.2 req/sec, very slow but safe",
-            "conservative": "Conservative - 0.5 req/sec, slow but respectful",
-            "moderate": "Moderate - 1 req/sec, balanced approach",
-            "aggressive": "Aggressive - 5 req/sec, fast but may trigger blocks",
-            "none": "No rate limiting - Maximum speed (not recommended)"
-        }
-        
-        choice = self._get_choice_input(
-            "Select rate limiting preset",
-            presets,
-            default="respectful_bot"
-        )
-        
-        if choice == "none":
-            return {"enabled": False}
-        
-        return {
-            "enabled": True,
-            "preset": choice,
-            "custom": None
-        }
-    
-    def _configure_pattern_extraction(self) -> Optional[Dict[str, Any]]:
-        """Configure pattern-based extraction"""
-        print("\n🔍 Configure Pattern-Based Extraction:")
-        print("="*40)
-        print("Pattern extraction can automatically find common data types without selectors.")
-        
-        use_patterns = self._get_choice_input(
-            "Enable pattern-based extraction?",
-            {"y": "Yes (Recommended)", "n": "No"},
-            default="y"
-        )
-        
-        if use_patterns != "y":
-            return None
-        
-        patterns = {}
-        available_patterns = {
-            "email": "Email addresses",
-            "phone": "Phone numbers (US format)",
-            "phone_international": "International phone numbers",
-            "date": "Dates in various formats",
-            "price": "Prices with currency symbols",
-            "address": "Street addresses",
-            "education": "Education credentials (JD, MBA, etc.)",
-            "bar_admission": "Bar admissions and licenses"
-        }
-        
-        print("\nSelect patterns to enable:")
-        for pattern, description in available_patterns.items():
-            enable = self._get_choice_input(
-                f"  Enable {pattern} extraction ({description})?",
-                {"y": "Yes", "n": "No"},
-                default="y" if pattern in ["email", "phone", "education"] else "n"
-            )
-            
-            if enable == "y":
-                patterns[pattern] = {
-                    "enabled": True,
-                    "context_keywords": self.pattern_extractor.patterns[pattern].context_keywords
+        # Use enhanced extractor for Selenium
+        if isinstance(self.extractor, EnhancedElementExtractor):
+            # Check if template has pattern configurations
+            patterns = {}
+            if hasattr(detail_rules, 'extraction_patterns'):
+                patterns = {
+                    field: config.get('pattern', field)
+                    for field, config in detail_rules.extraction_patterns.items()
                 }
-        
-        return patterns if patterns else None
-    
-    def _configure_fallback_strategies(self) -> Dict[str, Any]:
-        """Configure fallback selector strategies"""
-        print("\n🛡️  Configure Fallback Strategies:")
-        print("="*40)
-        print("Fallback strategies help find elements when primary selectors fail.")
-        
-        strategies = {
-            "text_based_selection": "Find elements by their text content",
-            "proximity_selection": "Find elements near labels",
-            "pattern_matching_primary": "Use pattern extraction as primary method"
-        }
-        
-        config = {}
-        for strategy, description in strategies.items():
-            enable = self._get_choice_input(
-                f"Enable {description}?",
-                {"y": "Yes", "n": "No"},
-                default="y"
-            )
-            config[strategy] = (enable == "y")
-        
-        return config
-    
-    def _define_list_rules_enhanced(self, template: ScrapingTemplate) -> bool:
-        """Enhanced list rules definition with advanced options"""
-        rules = template.list_page_rules
-        if not rules:
-            return False
-        
-        print("\n" + "="*40)
-        print("📋 List Page Configuration (Enhanced)")
-        print("="*40)
-        
-        # First do the standard interactive selection
-        if not self._define_list_rules_safe(template):
-            return False
-        
-        # Then add enhanced options
-        print("\n🚀 Advanced List Page Options:")
-        
-        # Configure load strategy
-        print("\n📄 Load Strategy Configuration:")
-        load_strategy = self._configure_load_strategy()
-        rules.load_strategy = LoadStrategyConfig(**load_strategy)
-        
-        # Add text-based fallbacks for fields
-        print("\n🔤 Text-Based Fallbacks:")
-        print("Define text labels to search for if CSS selectors fail.")
-        
-        for field_name in rules.fields:
-            label_text = self._get_user_input_with_validation(
-                f"Label text for '{field_name}' field (or Enter to skip): ",
-                allow_empty=True
-            )
-            if label_text:
-                if 'advanced_selectors' not in template.list_page_rules.__dict__:
-                    template.list_page_rules.__dict__['advanced_selectors'] = {
-                        'use_text_content': {}
-                    }
-                template.list_page_rules.__dict__['advanced_selectors']['use_text_content'][field_name] = label_text
-        
-        return True
-    
-    def _define_detail_rules_enhanced(self, template: ScrapingTemplate) -> bool:
-        """Enhanced detail rules definition with pattern extraction"""
-        # First do standard selection
-        if not self._define_detail_rules_safe(template):
-            return False
-        
-        rules = template.detail_page_rules
-        
-        print("\n🚀 Advanced Detail Page Options:")
-        
-        # Add text-based fallbacks
-        print("\n🔤 Text-Based Fallbacks:")
-        advanced_selectors = {'use_text_content': {}}
-        
-        for field_name in rules.fields:
-            label_text = self._get_user_input_with_validation(
-                f"Label text for '{field_name}' field (or Enter to skip): ",
-                allow_empty=True
-            )
-            if label_text:
-                advanced_selectors['use_text_content'][field_name] = label_text
-        
-        if advanced_selectors['use_text_content']:
-            template.detail_page_rules.__dict__['advanced_selectors'] = advanced_selectors
-        
-        return True
-    
-    def _define_list_rules_manual(self, template: ScrapingTemplate):
-        """Manual rule definition for non-Selenium engines"""
-        rules = template.list_page_rules
-        
-        print("\n📋 List Page Manual Configuration")
-        print("="*40)
-        
-        # Repeating item selector
-        selector = self._get_user_input_with_validation(
-            "Enter CSS selector for repeating items (e.g., 'div.lawyer-item'): ",
-            allow_empty=False
-        )
-        rules.repeating_item_selector = selector
-        
-        # Fields
-        print("\n📝 Define fields to extract from each item:")
-        while True:
-            field_name = self._get_user_input_with_validation(
-                "Field name (or Enter to finish): ",
-                allow_empty=True
-            )
-            if not field_name:
-                break
             
-            selector = self._get_user_input_with_validation(
-                f"CSS selector for {field_name}: ",
-                allow_empty=False
-            )
-            rules.fields[field_name] = selector
-        
-        # Profile link for list+detail
-        if template.scraping_type == ScrapingType.LIST_DETAIL:
-            link_selector = self._get_user_input_with_validation(
-                "CSS selector for detail page link: ",
-                allow_empty=False
-            )
-            rules.profile_link_selector = link_selector
-        
-        # Load strategy
-        load_strategy = self._configure_load_strategy()
-        rules.load_strategy = LoadStrategyConfig(**load_strategy)
-    
-    def _define_detail_rules_manual(self, template: ScrapingTemplate):
-        """Manual detail rule definition"""
-        rules = template.detail_page_rules
-        
-        print("\n📄 Detail Page Manual Configuration")
-        print("="*40)
-        
-        print("📝 Define fields to extract:")
-        while True:
-            field_name = self._get_user_input_with_validation(
-                "Field name (or Enter to finish): ",
-                allow_empty=True
-            )
-            if not field_name:
-                break
-            
-            # Ask if they want to use pattern extraction for this field
-            use_pattern = self._get_choice_input(
-                f"Use pattern extraction for {field_name}?",
-                {"y": "Yes", "n": "No, I'll provide a selector"},
-                default="y" if field_name.lower() in ["email", "phone", "education"] else "n"
+            # Extract with patterns
+            detail_data = self.extractor.extract_with_patterns(
+                detail_rules.fields,
+                patterns
             )
             
-            if use_pattern == "n":
-                selector = self._get_user_input_with_validation(
-                    f"CSS selector for {field_name}: ",
-                    allow_empty=False
-                )
-                rules.fields[field_name] = selector
-            else:
-                # Leave selector empty to trigger pattern extraction
-                rules.fields[field_name] = ""
+            # Try advanced strategies for missing fields
+            if hasattr(detail_rules, 'advanced_selectors'):
+                config = detail_rules.advanced_selectors
+                
+                for field_name, selector in detail_rules.fields.items():
+                    if field_name not in detail_data:
+                        # Try text-based selection
+                        if config.get('use_text_content', {}).get(field_name):
+                            text_to_find = config['use_text_content'][field_name]
+                            value = self.extractor.find_and_extract_by_label(
+                                text_to_find
+                            )
+                            if value:
+                                detail_data[field_name] = value
+                        
+                        # Try proximity-based selection
+                        elif config.get('use_proximity', {}).get(field_name):
+                            prox_config = config['use_proximity'][field_name]
+                            # Implementation depends on specific configuration
+                            pass
+        else:
+            # Fallback to parent implementation
+            detail_data = super()._extract_detail_data_smart(detail_rules)
+        
+        return detail_data
     
-    def _configure_load_strategy(self) -> Dict[str, Any]:
-        """Configure how to load more content"""
-        strategies = {
-            "auto": "Auto-detect (try to find load more buttons)",
-            "button": "Click a specific button",
-            "scroll": "Infinite scroll",
-            "pagination": "Traditional pagination (next button)",
-            "none": "No dynamic loading"
+    def close(self):
+        """Clean up resources"""
+        if hasattr(self, 'playwright_scraper'):
+            asyncio.run(self.playwright_scraper.close())
+        
+        super().close()
+    
+    def get_scraping_stats(self) -> Dict[str, Any]:
+        """Get scraping statistics including rate limiting"""
+        stats = {
+            'engine': self.engine,
+            'rate_limiting': self.rate_limiter.get_stats()
         }
         
-        strategy_type = self._get_choice_input(
-            "How does the site load more content?",
-            strategies,
-            default="auto"
-        )
-        
-        config = {
-            "type": strategy_type,
-            "pause_time": 2.0,
-            "consecutive_failure_limit": 3,
-            "extended_wait_multiplier": 2.0
-        }
-        
-        if strategy_type == "button":
-            selector = self._get_user_input_with_validation(
-                "Enter CSS selector for load more button: ",
-                allow_empty=False
-            )
-            config["button_selector"] = selector
-        elif strategy_type == "pagination":
-            selector = self._get_user_input_with_validation(
-                "Enter CSS selector for next page button: ",
-                allow_empty=False
-            )
-            config["pagination_next_selector"] = selector
-        
-        return config
-    
-    def _display_template_summary(self, template: Dict[str, Any]):
-        """Display comprehensive template summary"""
-        print("\n📊 Template Summary:")
-        print("="*40)
-        print(f"  - Name: {template['name']}")
-        print(f"  - Version: {template.get('version', '1.0')}")
-        print(f"  - Engine: {template.get('engine', 'selenium')}")
-        print(f"  - Type: {template['scraping_type']}")
-        
-        if template.get('list_page_rules'):
-            rules = template['list_page_rules']
-            print(f"  - List fields: {len(rules.get('fields', {}))}")
-            print(f"  - Load strategy: {rules.get('load_strategy', {}).get('type', 'none')}")
-        
-        if template.get('detail_page_rules'):
-            rules = template['detail_page_rules']
-            print(f"  - Detail fields: {len(rules.get('fields', {}))}")
-            
-            if rules.get('extraction_patterns'):
-                print(f"  - Pattern extraction: {len(rules['extraction_patterns'])} patterns enabled")
-        
-        if template.get('rate_limiting', {}).get('enabled'):
-            print(f"  - Rate limiting: {template['rate_limiting']['preset']}")
-        
-        if template.get('fallback_strategies'):
-            enabled = sum(1 for v in template['fallback_strategies'].values() if v)
-            print(f"  - Fallback strategies: {enabled} enabled")
-        
-        print("\n✨ Advanced Features:")
-        features = []
-        
-        if template.get('engine') != 'selenium':
-            features.append("Alternative engine")
-        if template.get('rate_limiting', {}).get('enabled'):
-            features.append("Rate limiting")
-        if template.get('detail_page_rules', {}).get('extraction_patterns'):
-            features.append("Pattern extraction")
-        if template.get('fallback_strategies'):
-            features.append("Fallback strategies")
-        if template.get('detail_page_rules', {}).get('advanced_selectors'):
-            features.append("Advanced selectors")
-        
-        for feature in features:
-            print(f"  ✓ {feature}")
-    
-    def _get_template_name(self, prompt: str = None) -> Optional[str]:
-        """Get template name with validation"""
-        if not prompt:
-            prompt = "💾 Enter template name (letters, numbers, underscores only): "
-        
-        return self._get_user_input_with_validation(
-            prompt,
-            validator=lambda x: (
-                (True, x.replace(" ", "_").replace("-", "_"))
-                if x.replace(" ", "_").replace("-", "_").replace("_", "").isalnum()
-                else (False, "Name must contain only letters, numbers, and underscores")
-            ),
-            allow_empty=True
-        )
-    
-    def _handle_cookies(self):
-        """Enhanced cookie handling"""
-        cookie_selector = self._get_user_input_with_validation(
-            "Enter custom cookie selector (or press Enter to auto-detect): ",
-            allow_empty=True
-        )
-        
-        try:
-            result = self.cookie_handler.accept_cookies(
-                [cookie_selector] if cookie_selector else None
-            )
-            if result:
-                print(f"✅ Cookie banner handled using: {result}")
-            else:
-                print("ℹ️  No cookie banner detected or handled")
-        except Exception as e:
-            self.logger.error(f"Cookie handling error: {e}")
-            print("⚠️  Error handling cookies, continuing anyway...")
-    
-    def _select_scraping_type(self) -> Optional[ScrapingType]:
-        """Select scraping type with better descriptions"""
-        types = {
-            "1": "List + Detail Pages - Extract from list, then follow links to detail pages",
-            "2": "List Only - Extract data from list page only",
-            "3": "Single Page - Extract from current page only"
-        }
-        
-        choice = self._get_choice_input(
-            "📋 Select scraping type",
-            types,
-            default="1"
-        )
-        
-        type_map = {
-            "1": ScrapingType.LIST_DETAIL,
-            "2": ScrapingType.LIST_ONLY,
-            "3": ScrapingType.SINGLE_PAGE
-        }
-        
-        return type_map.get(choice)
+        return stats

@@ -186,7 +186,7 @@ class BaseScraper:
         """
         try:
             # Load the JavaScript file
-            js_path = self.config.get_js_asset_path(self.config.INTERACTIVE_JS_FILENAME)
+            js_path = self.config.get_js_asset_path()
             with open(js_path, 'r', encoding='utf-8') as f:
                 js_content = f.read()
             

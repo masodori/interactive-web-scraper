@@ -99,15 +99,32 @@ class PlaywrightSyncWrapper:
     def execute_script(self, script: str, *args) -> Any:
         """Execute JavaScript (Selenium-compatible method)."""
         try:
-            # Playwright's evaluate expects a function or expression
-            # Wrap the script in a function if needed
-            if not script.strip().startswith('(') and not script.strip().startswith('function'):
-                # For simple expressions or statements, wrap in IIFE
-                wrapped_script = f"(() => {{ {script} }})()"
-            else:
-                wrapped_script = script
+            # Playwright expects expressions or functions, not statements with 'return'
+            # Convert Selenium-style scripts to Playwright-compatible ones
             
-            result = self.page.evaluate(wrapped_script)
+            # Remove leading/trailing whitespace
+            script = script.strip()
+            
+            # Handle different script patterns
+            if script.startswith('return '):
+                # Convert "return x" to just "x"
+                expression = script[7:].strip()
+                result = self.page.evaluate(expression)
+            elif script.startswith('document.') or script.startswith('window.'):
+                # Direct property access - evaluate as expression
+                result = self.page.evaluate(script)
+            elif '{' in script and '}' in script:
+                # Multi-line script - wrap in function
+                if not script.startswith('(') and not script.startswith('function'):
+                    # Wrap in IIFE
+                    wrapped = f"(() => {{ {script} }})()"
+                    result = self.page.evaluate(wrapped)
+                else:
+                    result = self.page.evaluate(script)
+            else:
+                # Simple expression
+                result = self.page.evaluate(script)
+            
             return result
         except Exception as e:
             self.logger.error(f"Failed to execute script: {e}")
