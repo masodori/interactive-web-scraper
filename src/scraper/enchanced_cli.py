@@ -13,7 +13,7 @@ from typing import Any, List, Optional, Tuple
 import json
 
 from .core import InteractiveScraper
-from .core.enhanced_template_scraper import EnhancedTemplateScraper
+# from .core.enhanced_template_scraper import EnhancedTemplateScraper
 from .models import ExportFormat, ScrapingTemplate
 from .utils.logging_config import setup_logging
 from .utils.template_migration import TemplateMigrationManager
@@ -104,6 +104,8 @@ def _run_apply_enhanced(args: argparse.Namespace = None):
     
     scraper = None
     try:
+        # Import here to avoid import error if module is missing
+        from .core.enhanced_template_scraper import EnhancedTemplateScraper
         # Create enhanced scraper
         scraper = EnhancedTemplateScraper(
             engine=engine,

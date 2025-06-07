@@ -9,8 +9,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 try:
-    from playwright.async_api import async_playwright, Page, Browser, Playwright
-    from playwright._impl._api_types import TimeoutError as PlaywrightTimeout
+    from playwright.async_api import async_playwright, Page, Browser, Playwright, TimeoutError as PlaywrightTimeout
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
