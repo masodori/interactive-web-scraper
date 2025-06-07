@@ -623,29 +623,6 @@ def main():
                 type=Path, 
                 help='Path to the template JSON file'
             )
-            apply_parser.add_argument(
-                '--headless', 
-                action='store_true', 
-                help='Run browser in headless mode (no window)'
-            )
-            apply_parser.add_argument(
-                '--export',
-                nargs='+',
-                choices=[f.value for f in ExportFormat],
-                default=[ExportFormat.JSON.value],
-                help='Export format(s) for scraped data (default: json)'
-            )
-            # ...
-            # Apply command
-            apply_parser = subparsers.add_parser(
-                'apply', 
-                help='Apply an existing template to scrape data'
-            )
-            apply_parser.add_argument(
-                'template', 
-                type=Path, 
-                help='Path to the template JSON file'
-            )
             # ADD THE NEW --engine ARGUMENT HERE
             apply_parser.add_argument(
                 '--engine',
