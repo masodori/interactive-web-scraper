@@ -255,9 +255,7 @@ def _run_apply_safe(args: argparse.Namespace = None):
     """Safely run template application with error handling."""
     cli = InteractiveCLI()
     engine_choice = args.engine if args and hasattr(args, 'engine') else 'selenium'
-    
-    print(f"\n📋 Applying template: {template_path.name}")
-    print(f"🚀 Engine: {engine_choice}")
+
     # Get template path
     if args and hasattr(args, 'template'):
         template_path = args.template
@@ -308,6 +306,7 @@ def _run_apply_safe(args: argparse.Namespace = None):
         return
     
     print(f"\n📋 Applying template: {template_path.name}")
+    print(f"🚀 Engine: {engine_choice}")
     print(f"🎯 Export formats: {[f.value for f in export_formats]}")
     print(f"👁️  Headless mode: {'Yes' if headless else 'No'}")
     
