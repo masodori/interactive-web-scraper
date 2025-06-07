@@ -12,11 +12,26 @@ from typing import Dict, Any, Optional, List, Tuple
 from urllib.parse import urlparse
 
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException, InvalidArgumentException, NoSuchElementException
+from selenium.common.exceptions import (
+    WebDriverException,
+    InvalidArgumentException,
+    NoSuchElementException,
+)
 
 from .base_scraper import BaseScraper
-from ..models import ScrapingTemplate, SiteInfo, ScrapingType, TemplateRules, LoadStrategy, LoadStrategyConfig
-from ..utils.selectors import normalize_selector, generalize_selector, make_relative_selector
+from ..models import (
+    ScrapingTemplate,
+    SiteInfo,
+    ScrapingType,
+    TemplateRules,
+    LoadStrategy,
+    LoadStrategyConfig,
+)
+from ..utils.selectors import (
+    normalize_selector,
+    generalize_selector,
+    make_relative_selector,
+)
 
 
 class InteractiveScraper(BaseScraper):
@@ -35,10 +50,12 @@ class InteractiveScraper(BaseScraper):
         js_path = self.config.get_js_asset_path()
         if not js_path.exists():
             self.logger.error(f"Interactive JS file not found at: {js_path}")
-            print(f"\n ERROR: JavaScript asset not found. Please ensure '{self.config.INTERACTIVE_JS_FILENAME}' is in the assets/js directory.")
+            print(
+                f"\n ERROR: JavaScript asset not found. Please ensure '{self.config.INTERACTIVE_JS_FILENAME}' is in the assets/js directory."
+            )
             return False
-        
-        with open(js_path, 'r', encoding='utf-8') as f:
+
+        with open(js_path, "r", encoding="utf-8") as f:
             js_code = f.read()
 
         escaped_message = json.dumps(context_message)
@@ -58,12 +75,14 @@ class InteractiveScraper(BaseScraper):
                 result = self.driver.execute_script(
                     "return document.getElementById('selected_element_data') ? document.getElementById('selected_element_data').value : null;"
                 )
-                if not result or result == 'null':
+                if not result or result == "null":
                     time.sleep(0.5)
                     continue
 
                 if result == "DONE_SELECTING":
-                    self.driver.execute_script("document.getElementById('selected_element_data').value = '';")
+                    self.driver.execute_script(
+                        "document.getElementById('selected_element_data').value = '';"
+                    )
                     return {"type": "done"}
 
                 if result != self._last_js_data_read:
@@ -88,22 +107,25 @@ class InteractiveScraper(BaseScraper):
             return False, "URL cannot be empty"
 
         # Add protocol if missing
-        if not url.startswith(('http://', 'https://', 'file://')):
-            url = 'https://' + url
+        if not url.startswith(("http://", "https://", "file://")):
+            url = "https://" + url
 
         # Parse URL
         try:
             parsed = urlparse(url)
             if not parsed.scheme or not parsed.netloc:
-                return False, "Invalid URL format. Please include the domain (e.g., example.com)"
+                return (
+                    False,
+                    "Invalid URL format. Please include the domain (e.g., example.com)",
+                )
         except Exception:
             return False, "Unable to parse URL"
 
         # Check common URL mistakes
-        if ' ' in url:
+        if " " in url:
             return False, "URL contains spaces. Please check the URL"
 
-        if not '.' in parsed.netloc or parsed.netloc.endswith('.'):
+        if not "." in parsed.netloc or parsed.netloc.endswith("."):
             return False, "Invalid domain name"
 
         return True, url
@@ -115,7 +137,7 @@ class InteractiveScraper(BaseScraper):
         validator: Optional[callable] = None,
         error_message: str = "Invalid input. Please try again.",
         max_attempts: int = 3,
-        allow_empty: bool = True
+        allow_empty: bool = True,
     ) -> Optional[str]:
         """
         Get user input with validation and error handling.
@@ -151,7 +173,9 @@ class InteractiveScraper(BaseScraper):
                     if is_valid:
                         return validated_value
                     else:
-                        print(f"❌ {validated_value}")  # validated_value contains error message
+                        print(
+                            f"❌ {validated_value}"
+                        )  # validated_value contains error message
                         attempts += 1
                         continue
 
@@ -176,7 +200,7 @@ class InteractiveScraper(BaseScraper):
         prompt: str,
         choices: Dict[str, Any],
         default: str = None,
-        max_attempts: int = 3
+        max_attempts: int = 3,
     ) -> Optional[str]:
         """
         Get user choice from a list of options with validation.
@@ -190,6 +214,7 @@ class InteractiveScraper(BaseScraper):
         Returns:
             Selected choice or None
         """
+
         def validate_choice(response):
             if response in choices:
                 return True, response
@@ -221,7 +246,7 @@ class InteractiveScraper(BaseScraper):
             validator=validate_choice,
             error_message="Invalid choice",
             max_attempts=max_attempts,
-            allow_empty=bool(default)
+            allow_empty=bool(default),
         )
 
     def _safe_navigate(self, url: str, max_retries: int = 3) -> bool:
@@ -241,7 +266,9 @@ class InteractiveScraper(BaseScraper):
                     self._current_url = url
                     return True
                 else:
-                    print(f"⚠️  Failed to load {url} (attempt {attempt + 1}/{max_retries})")
+                    print(
+                        f"⚠️  Failed to load {url} (attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(2)
             except InvalidArgumentException:
                 print(f"❌ Invalid URL: {url}")
@@ -260,7 +287,9 @@ class InteractiveScraper(BaseScraper):
 
         return False
 
-    def _inject_interactive_js_with_retry(self, context_message: str = "", max_retries: int = 3) -> bool:
+    def _inject_interactive_js_with_retry(
+        self, context_message: str = "", max_retries: int = 3
+    ) -> bool:
         """
         Inject JavaScript with retry logic.
 
@@ -277,7 +306,9 @@ class InteractiveScraper(BaseScraper):
                     return True
                 else:
                     if attempt < max_retries - 1:
-                        print(f"⚠️  Failed to inject selection tool (attempt {attempt + 1}/{max_retries})")
+                        print(
+                            f"⚠️  Failed to inject selection tool (attempt {attempt + 1}/{max_retries})"
+                        )
                         time.sleep(1)
             except Exception as e:
                 self.logger.error(f"Error injecting JS: {e}")
@@ -291,7 +322,7 @@ class InteractiveScraper(BaseScraper):
         self,
         rules: TemplateRules,
         is_relative_to: Optional[str] = None,
-        max_fields: int = 50
+        max_fields: int = 50,
     ) -> bool:
         """
         Collect fields with error recovery and limits.
@@ -304,7 +335,9 @@ class InteractiveScraper(BaseScraper):
         Returns:
             True if at least one field was collected
         """
-        if not self._inject_interactive_js_with_retry("Click on data fields. Click 'Done Selecting' when finished."):
+        if not self._inject_interactive_js_with_retry(
+            "Click on data fields. Click 'Done Selecting' when finished."
+        ):
             return False
 
         fields_collected = 0
@@ -318,7 +351,9 @@ class InteractiveScraper(BaseScraper):
                 if not selection:
                     consecutive_errors += 1
                     if consecutive_errors >= max_consecutive_errors:
-                        print("⚠️  No response from selection tool. Ending field collection.")
+                        print(
+                            "⚠️  No response from selection tool. Ending field collection."
+                        )
                         break
                     time.sleep(1)
                     continue
@@ -331,8 +366,8 @@ class InteractiveScraper(BaseScraper):
                 if selection.get("type") != "element_selected":
                     continue
 
-                raw_selector = selection.get('selector', '')
-                text_content = selection.get('text', '')[:50]
+                raw_selector = selection.get("selector", "")
+                text_content = selection.get("text", "")[:50]
 
                 if not raw_selector:
                     print("⚠️  Invalid selection. Please try again.")
@@ -341,25 +376,29 @@ class InteractiveScraper(BaseScraper):
                 # Get field name with validation
                 field_name = self._get_user_input_with_validation(
                     f"Enter field name for '{text_content}...' (or 'skip' to skip): ",
-                    validator=lambda x: (True, x) if x and x.lower() != 'skip' else (False, "Skipping field"),
+                    validator=lambda x: (
+                        (True, x)
+                        if x and x.lower() != "skip"
+                        else (False, "Skipping field")
+                    ),
                     allow_empty=False,
-                    max_attempts=3
+                    max_attempts=3,
                 )
 
-                if not field_name or field_name.lower() == 'skip':
+                if not field_name or field_name.lower() == "skip":
                     continue
 
                 # Sanitize field name
-                field_name = field_name.strip().replace(' ', '_').replace('-', '_')
+                field_name = field_name.strip().replace(" ", "_").replace("-", "_")
 
                 # Check for duplicate field names
                 if field_name in rules.fields:
                     overwrite = self._get_choice_input(
                         f"Field '{field_name}' already exists. Overwrite?",
                         {"y": "Yes", "n": "No"},
-                        default="n"
+                        default="n",
                     )
-                    if overwrite != 'y':
+                    if overwrite != "y":
                         continue
 
                 # Make selector relative if needed
@@ -390,12 +429,12 @@ class InteractiveScraper(BaseScraper):
         if fields_collected == 0:
             print("\n⚠️  No fields were collected.")
             retry = self._get_choice_input(
-                "Would you like to try again?",
-                {"y": "Yes", "n": "No"},
-                default="y"
+                "Would you like to try again?", {"y": "Yes", "n": "No"}, default="y"
             )
-            if retry == 'y':
-                return self._collect_fields_with_recovery(rules, is_relative_to, max_fields)
+            if retry == "y":
+                return self._collect_fields_with_recovery(
+                    rules, is_relative_to, max_fields
+                )
 
         return fields_collected > 0
 
@@ -404,12 +443,14 @@ class InteractiveScraper(BaseScraper):
         self._template_creation_attempts += 1
 
         if self._template_creation_attempts > self._max_creation_attempts:
-            print(f"❌ Maximum template creation attempts ({self._max_creation_attempts}) exceeded.")
+            print(
+                f"❌ Maximum template creation attempts ({self._max_creation_attempts}) exceeded."
+            )
             return
 
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("🔧 Interactive Template Creation")
-        print("="*50)
+        print("=" * 50)
 
         try:
             # Step 1: Get and validate URL
@@ -418,10 +459,10 @@ class InteractiveScraper(BaseScraper):
                 url_input = self._get_user_input_with_validation(
                     "Enter the target URL (or 'quit' to exit): ",
                     default="https://www.gibsondunn.com/people/",
-                    allow_empty=True
+                    allow_empty=True,
                 )
 
-                if not url_input or url_input.lower() == 'quit':
+                if not url_input or url_input.lower() == "quit":
                     print("👋 Exiting template creation.")
                     return
 
@@ -438,9 +479,9 @@ class InteractiveScraper(BaseScraper):
                 retry = self._get_choice_input(
                     "Failed to navigate to URL. Would you like to try a different URL?",
                     {"y": "Yes", "n": "No"},
-                    default="y"
+                    default="y",
                 )
-                if retry == 'y':
+                if retry == "y":
                     return self.create_template()
                 else:
                     return
@@ -451,11 +492,13 @@ class InteractiveScraper(BaseScraper):
             print("\n🍪 Checking for cookie banners...")
             cookie_selector = self._get_user_input_with_validation(
                 "Enter custom cookie selector (or press Enter to auto-detect): ",
-                allow_empty=True
+                allow_empty=True,
             )
 
             try:
-                if self.cookie_handler.accept_cookies([cookie_selector] if cookie_selector else None):
+                if self.cookie_handler.accept_cookies(
+                    [cookie_selector] if cookie_selector else None
+                ):
                     print("✅ Cookie banner handled")
                 else:
                     print("ℹ️  No cookie banner detected or handled")
@@ -472,9 +515,9 @@ class InteractiveScraper(BaseScraper):
                 {
                     "1": "List + Detail (scrape list page and detail pages)",
                     "2": "List Only (scrape list page only)",
-                    "3": "Single Page (scrape current page only)"
+                    "3": "Single Page (scrape current page only)",
                 },
-                default="1"
+                default="1",
             )
 
             if not scraping_type_choice:
@@ -484,20 +527,36 @@ class InteractiveScraper(BaseScraper):
             scraping_type_map = {
                 "1": ScrapingType.LIST_DETAIL,
                 "2": ScrapingType.LIST_ONLY,
-                "3": ScrapingType.SINGLE_PAGE
+                "3": ScrapingType.SINGLE_PAGE,
             }
-            scraping_type = scraping_type_map.get(scraping_type_choice, ScrapingType.LIST_DETAIL)
-
-            # Step 6: Create template
-            template = ScrapingTemplate(
-                name="new_template",
-                site_info=site_info,
-                scraping_type=scraping_type,
-                list_page_rules=TemplateRules() if scraping_type != ScrapingType.SINGLE_PAGE else None,
-                detail_page_rules=TemplateRules()
+            scraping_type = scraping_type_map.get(
+                scraping_type_choice, ScrapingType.LIST_DETAIL
             )
 
-            # Step 7: Define rules based on type
+            # Step 6: Select scraping engine
+            engine_choice = self._get_choice_input(
+                "\n⚙️  Select scraping engine:",
+                {"1": "Chromium (Selenium)", "2": "Requests"},
+                default="1",
+            )
+            engine_map = {"1": "selenium", "2": "requests"}
+            engine = engine_map.get(engine_choice, "selenium")
+
+            # Step 7: Create template
+            template = ScrapingTemplate(
+                name="new_template",
+                engine=engine,
+                site_info=site_info,
+                scraping_type=scraping_type,
+                list_page_rules=(
+                    TemplateRules()
+                    if scraping_type != ScrapingType.SINGLE_PAGE
+                    else None
+                ),
+                detail_page_rules=TemplateRules(),
+            )
+
+            # Step 8: Define rules based on type
             try:
                 if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.LIST_ONLY):
                     if not self._define_list_rules_safe(template):
@@ -505,20 +564,23 @@ class InteractiveScraper(BaseScraper):
                         save_anyway = self._get_choice_input(
                             "Save template anyway?",
                             {"y": "Yes", "n": "No"},
-                            default="n"
+                            default="n",
                         )
-                        if save_anyway != 'y':
+                        if save_anyway != "y":
                             return
 
-                if scraping_type in (ScrapingType.LIST_DETAIL, ScrapingType.SINGLE_PAGE):
+                if scraping_type in (
+                    ScrapingType.LIST_DETAIL,
+                    ScrapingType.SINGLE_PAGE,
+                ):
                     if not self._define_detail_rules_safe(template):
                         print("⚠️  Failed to define detail rules completely.")
                         save_anyway = self._get_choice_input(
                             "Save template anyway?",
                             {"y": "Yes", "n": "No"},
-                            default="n"
+                            default="n",
                         )
-                        if save_anyway != 'y':
+                        if save_anyway != "y":
                             return
 
             except Exception as e:
@@ -530,33 +592,46 @@ class InteractiveScraper(BaseScraper):
             template_name = self._get_user_input_with_validation(
                 "\n💾 Enter template name (letters, numbers, underscores only): ",
                 default="my_template",
-                validator=lambda x: (True, x.replace(' ', '_').replace('-', '_')) if x.replace(' ', '_').replace('-', '_').replace('_', '').isalnum() else (False, "Name must contain only letters, numbers, and underscores"),
-                allow_empty=True
+                validator=lambda x: (
+                    (True, x.replace(" ", "_").replace("-", "_"))
+                    if x.replace(" ", "_").replace("-", "_").replace("_", "").isalnum()
+                    else (
+                        False,
+                        "Name must contain only letters, numbers, and underscores",
+                    )
+                ),
+                allow_empty=True,
             )
 
             if not template_name:
                 template_name = "my_template"
 
-            template.name = template_name
-            template_path = self.config.TEMPLATES_DIR / f"{template_name}.json"
+            template.name = f"{template_name}_{engine}"
+            template_path = self.config.TEMPLATES_DIR / f"{template.name}.json"
 
             # Check if file exists
             if template_path.exists():
                 overwrite = self._get_choice_input(
                     f"Template '{template_name}' already exists. Overwrite?",
                     {"y": "Yes", "n": "No"},
-                    default="n"
+                    default="n",
                 )
-                if overwrite != 'y':
+                if overwrite != "y":
                     new_name = self._get_user_input_with_validation(
                         "Enter new template name: ",
-                        validator=lambda x: (True, x.replace(' ', '_').replace('-', '_')) if x else (False, "Name cannot be empty"),
-                        allow_empty=False
+                        validator=lambda x: (
+                            (True, x.replace(" ", "_").replace("-", "_"))
+                            if x
+                            else (False, "Name cannot be empty")
+                        ),
+                        allow_empty=False,
                     )
                     if new_name:
                         template_name = new_name
-                        template.name = template_name
-                        template_path = self.config.TEMPLATES_DIR / f"{template_name}.json"
+                        template.name = f"{template_name}_{engine}"
+                        template_path = (
+                            self.config.TEMPLATES_DIR / f"{template.name}.json"
+                        )
 
             # Save template
             try:
@@ -564,11 +639,14 @@ class InteractiveScraper(BaseScraper):
                 print(f"\n✅ Template saved successfully to: {template_path}")
                 print(f"\n📊 Template Summary:")
                 print(f"  - Name: {template.name}")
+                print(f"  - Engine: {engine}")
                 print(f"  - Type: {scraping_type.value}")
                 if template.list_page_rules:
                     print(f"  - List fields: {len(template.list_page_rules.fields)}")
                 if template.detail_page_rules:
-                    print(f"  - Detail fields: {len(template.detail_page_rules.fields)}")
+                    print(
+                        f"  - Detail fields: {len(template.detail_page_rules.fields)}"
+                    )
                 print("\n🎉 Template creation complete!")
 
             except Exception as e:
@@ -581,11 +659,9 @@ class InteractiveScraper(BaseScraper):
             self.logger.error(f"Unexpected error in template creation: {e}")
             print(f"\n❌ Unexpected error: {e}")
             retry = self._get_choice_input(
-                "Would you like to try again?",
-                {"y": "Yes", "n": "No"},
-                default="y"
+                "Would you like to try again?", {"y": "Yes", "n": "No"}, default="y"
             )
-            if retry == 'y':
+            if retry == "y":
                 return self.create_template()
 
     def _define_list_rules_safe(self, template: ScrapingTemplate) -> bool:
@@ -594,16 +670,18 @@ class InteractiveScraper(BaseScraper):
         if not rules:
             return False
 
-        print("\n" + "="*40)
+        print("\n" + "=" * 40)
         print("📋 List Page Configuration")
-        print("="*40)
+        print("=" * 40)
 
         # Step 1: Select repeating item
         print("\n🎯 Step 1: Select a repeating item container")
         print("Click on ONE complete item (e.g., a person card, product card, etc.)")
         print("This helps identify all similar items on the page.")
 
-        if not self._inject_interactive_js_with_retry("Click on ONE complete repeating item"):
+        if not self._inject_interactive_js_with_retry(
+            "Click on ONE complete repeating item"
+        ):
             return False
 
         selection = None
@@ -613,9 +691,9 @@ class InteractiveScraper(BaseScraper):
         while attempts < max_attempts:
             try:
                 selection = self._get_user_selection()
-                if selection and selection.get('type') == 'element_selected':
+                if selection and selection.get("type") == "element_selected":
                     break
-                elif selection and selection.get('type') == 'done':
+                elif selection and selection.get("type") == "done":
                     print("⚠️  No item selected. Please select an item first.")
                     attempts += 1
                 else:
@@ -624,12 +702,12 @@ class InteractiveScraper(BaseScraper):
                 self.logger.error(f"Error getting selection: {e}")
                 attempts += 1
 
-        if not selection or selection.get('type') != 'element_selected':
+        if not selection or selection.get("type") != "element_selected":
             print("❌ Failed to get item selection.")
             return False
 
         try:
-            selector = generalize_selector(selection['selector'])
+            selector = generalize_selector(selection["selector"])
             rules.repeating_item_selector = selector
 
             # Validate selector
@@ -640,7 +718,9 @@ class InteractiveScraper(BaseScraper):
             if items_found == 0:
                 print("⚠️  Warning: No items found with this selector!")
             elif items_found == 1:
-                print("⚠️  Warning: Only 1 item found. This might not be the right selector.")
+                print(
+                    "⚠️  Warning: Only 1 item found. This might not be the right selector."
+                )
 
         except Exception as e:
             self.logger.error(f"Error setting repeating item selector: {e}")
@@ -652,7 +732,9 @@ class InteractiveScraper(BaseScraper):
         print("Click on each piece of data you want to extract (name, price, etc.)")
         print("Click 'Done Selecting' when finished.")
 
-        if not self._collect_fields_with_recovery(rules, is_relative_to=rules.repeating_item_selector):
+        if not self._collect_fields_with_recovery(
+            rules, is_relative_to=rules.repeating_item_selector
+        ):
             return False
 
         # Step 3: Select detail link (if needed)
@@ -660,7 +742,9 @@ class InteractiveScraper(BaseScraper):
             print("\n🎯 Step 3: Select the link to detail page")
             print("Click on the link that leads to the detail/profile page")
 
-            if not self._inject_interactive_js_with_retry("Click the link to the detail page"):
+            if not self._inject_interactive_js_with_retry(
+                "Click the link to the detail page"
+            ):
                 return False
 
             link_selection = None
@@ -669,16 +753,19 @@ class InteractiveScraper(BaseScraper):
             while attempts < max_attempts:
                 try:
                     link_selection = self._get_user_selection()
-                    if link_selection and link_selection.get('type') == 'element_selected':
+                    if (
+                        link_selection
+                        and link_selection.get("type") == "element_selected"
+                    ):
                         break
-                    elif link_selection and link_selection.get('type') == 'done':
+                    elif link_selection and link_selection.get("type") == "done":
                         print("⚠️  No link selected.")
                         skip = self._get_choice_input(
                             "Skip detail page link?",
                             {"y": "Yes", "n": "No"},
-                            default="n"
+                            default="n",
                         )
-                        if skip == 'y':
+                        if skip == "y":
                             return True
                         attempts += 1
                     else:
@@ -687,11 +774,10 @@ class InteractiveScraper(BaseScraper):
                     self.logger.error(f"Error getting link selection: {e}")
                     attempts += 1
 
-            if link_selection and link_selection.get('type') == 'element_selected':
+            if link_selection and link_selection.get("type") == "element_selected":
                 try:
                     link_selector = make_relative_selector(
-                        link_selection['selector'],
-                        rules.repeating_item_selector
+                        link_selection["selector"], rules.repeating_item_selector
                     )
                     rules.profile_link_selector = link_selector
                     print(f"✅ Detail link selector set")
@@ -706,35 +792,39 @@ class InteractiveScraper(BaseScraper):
         if not template.detail_page_rules:
             return False
 
-        print("\n" + "="*40)
+        print("\n" + "=" * 40)
         print("📄 Detail Page Configuration")
-        print("="*40)
+        print("=" * 40)
 
         # Navigate to detail page if list+detail
-        if template.scraping_type == ScrapingType.LIST_DETAIL and template.list_page_rules:
+        if (
+            template.scraping_type == ScrapingType.LIST_DETAIL
+            and template.list_page_rules
+        ):
             print("\n🔍 Navigating to a sample detail page...")
 
             try:
                 # Try to find and navigate to first detail page
                 first_item = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    template.list_page_rules.repeating_item_selector
+                    By.CSS_SELECTOR, template.list_page_rules.repeating_item_selector
                 )
 
                 if template.list_page_rules.profile_link_selector:
                     link_element = first_item.find_element(
-                        By.CSS_SELECTOR,
-                        template.list_page_rules.profile_link_selector
+                        By.CSS_SELECTOR, template.list_page_rules.profile_link_selector
                     )
 
                     # Walk up the DOM to find the actual <a> tag
                     anchor_element = link_element
-                    while anchor_element.tag_name.lower() != 'a' and anchor_element.tag_name.lower() != 'body':
-                        anchor_element = anchor_element.find_element(By.XPATH, '..')
+                    while (
+                        anchor_element.tag_name.lower() != "a"
+                        and anchor_element.tag_name.lower() != "body"
+                    ):
+                        anchor_element = anchor_element.find_element(By.XPATH, "..")
 
                     detail_url = None
-                    if anchor_element.tag_name.lower() == 'a':
-                        detail_url = anchor_element.get_attribute('href')
+                    if anchor_element.tag_name.lower() == "a":
+                        detail_url = anchor_element.get_attribute("href")
 
                     if detail_url:
                         print(f"🌐 Navigating to: {detail_url}")
@@ -743,12 +833,14 @@ class InteractiveScraper(BaseScraper):
                             manual = self._get_choice_input(
                                 "Manually navigate to a detail page?",
                                 {"y": "Yes", "n": "No"},
-                                default="y"
+                                default="y",
                             )
-                            if manual != 'y':
+                            if manual != "y":
                                 return False
                             else:
-                                input("\n⏸️  Navigate to a detail page and press Enter when ready...")
+                                input(
+                                    "\n⏸️  Navigate to a detail page and press Enter when ready..."
+                                )
                         else:
                             print("✅ Navigated to detail page")
                     else:
@@ -761,10 +853,12 @@ class InteractiveScraper(BaseScraper):
                 manual = self._get_choice_input(
                     "Manually navigate to a detail page?",
                     {"y": "Yes", "n": "No"},
-                    default="y"
+                    default="y",
                 )
-                if manual == 'y':
-                    input("\n⏸️  Navigate to a detail page and press Enter when ready...")
+                if manual == "y":
+                    input(
+                        "\n⏸️  Navigate to a detail page and press Enter when ready..."
+                    )
                 else:
                     return False
 
