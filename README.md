@@ -1,298 +1,387 @@
-# Interactive Web Scraper
+# Enhanced Web Scraper v2.0 - New Features Guide
 
-A powerful, modular Python web scraper built with Selenium that supports interactive template creation, cookie handling, and multiple export formats.
+## Overview
 
-## Features
+The Enhanced Web Scraper v2.0 includes powerful new features that make web scraping more robust, intelligent, and respectful. This guide covers all the new capabilities and how to use them.
 
-- **Interactive Template Creation**: Point-and-click interface for selecting elements to scrape
-- **Cookie Consent Handling**: Automatic detection and handling of cookie popups
-- **Multiple Scraping Modes**:
-  - Single page scraping
-  - List page scraping
-  - List + Detail page scraping
-- **Dynamic Content Loading**:
-  - Scroll-based loading
-  - "Load More" button clicking
-  - Pagination support
-- **Export Formats**: JSON, CSV, Excel, HTML
-- **Large Dataset Support**: Batch processing with progress tracking
-- **Robust Error Handling**: Retry mechanisms and detailed logging
-
-## Installation
+## 🚀 Quick Start with New Features
 
 ```bash
-# Clone the repository
-git clone https://github.com/masodori/interactive-web-scraper.git
-cd interactive-web-scraper
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+# Install dependencies including new ones
 pip install -r requirements.txt
 
-# Install in development mode
-pip install -e .
+# For Playwright support (optional but recommended)
+pip install playwright
+playwright install
+
+# For AI-powered element detection (optional)
+pip install sentence-transformers numpy
+
+# Run enhanced CLI
+python -m scraper
 ```
 
-## Quick Start
+## 🎯 New Features
 
-### Basic Usage
+### 1. Pattern-Based Extraction
 
-```python
-from scraper.core import InteractiveScraper
-from scraper.config import Config
+Automatically extract common data types without specifying selectors:
 
-# Initialize scraper
-scraper = InteractiveScraper(headless=False)
+**Supported Patterns:**
+- **Emails**: Finds email addresses with validation
+- **Phone Numbers**: US and international formats
+- **Addresses**: Street addresses with zip codes
+- **Dates**: Various date formats
+- **Prices**: Currency amounts
+- **Education**: Degrees (JD, MBA, PhD, etc.)
+- **Bar Admissions**: Legal credentials
+- **Social Media**: LinkedIn, Twitter, Facebook URLs
 
-# Simple page scraping
-scraper.scrape_url('https://example.com')
-
-# Close when done
-scraper.close()
+**Usage in Templates:**
+```json
+{
+  "detail_page_rules": {
+    "fields": {
+      "email": "",  // Empty selector triggers pattern extraction
+      "phone": ""
+    },
+    "extraction_patterns": {
+      "email": {
+        "enabled": true,
+        "context_keywords": ["contact", "email"]
+      },
+      "phone": {
+        "enabled": true,
+        "context_keywords": ["phone", "tel", "call"]
+      }
+    }
+  }
+}
 ```
 
-### Create a Scraping Template
+### 2. Multiple Scraping Engines
+
+Choose the best engine for your needs:
+
+#### **Selenium** (Default)
+- ✅ Full JavaScript support
+- ✅ Interactive element selection
+- ✅ Handles dynamic content
+- ❌ Slower performance
+
+#### **Playwright** (Recommended for modern sites)
+- ✅ Faster than Selenium
+- ✅ Better JavaScript handling
+- ✅ Network interception
+- ✅ Multiple browser support (Chromium, Firefox, WebKit)
+- ❌ Requires separate installation
+
+#### **Requests** (For static sites)
+- ✅ Extremely fast
+- ✅ Low resource usage
+- ✅ Good for APIs
+- ❌ No JavaScript support
+- ❌ No interactive selection
+
+### 3. Rate Limiting
+
+Be respectful to websites with built-in rate limiting:
+
+**Presets:**
+- **respectful_bot**: 0.2 req/sec (very safe)
+- **conservative**: 0.5 req/sec (slow but respectful)
+- **moderate**: 1 req/sec (balanced)
+- **aggressive**: 5 req/sec (fast but risky)
+
+**Features:**
+- Per-domain tracking
+- Burst tokens for occasional speed-ups
+- Request queuing with timeouts
+- Statistics tracking
+
+### 4. Template Migration System
+
+Automatically update old templates to use new features:
 
 ```bash
-# Interactive template creation
-python examples/template_creation.py
+# Migrate all templates
+python migrate_templates.py
+
+# Or use CLI
+python -m scraper migrate
 ```
 
-### Apply a Template
+**Migration Path:**
+- v1.0 → v2.0: Adds pattern extraction, engine selection
+- v2.0 → v2.1: Adds rate limiting, fallback strategies
 
+### 5. Advanced Selector Strategies
+
+Multiple fallback methods to find elements:
+
+#### **Text-Based Selection**
+Find elements by their visible text:
 ```python
-from scraper.core import TemplateScraper
-from scraper.models import ExportFormat
+# Finds "Email:" label with fuzzy matching
+elements = advanced.find_by_text_content("Email:", fuzzy=True)
+```
 
-# Initialize scraper
-scraper = TemplateScraper(headless=True)
+#### **Proximity-Based Selection**
+Find elements near other elements:
+```python
+# Find value near a label
+nearby = advanced.find_by_proximity(label_element, max_distance=200)
+```
 
-# Apply template and export
-result = scraper.apply_template(
-    'templates/my_template.json',
-    export_formats=[ExportFormat.JSON, ExportFormat.CSV]
+#### **Visual Pattern Matching**
+Find elements by their visual role:
+```python
+# Find all buttons on the page
+buttons = advanced.find_by_visual_pattern("button")
+```
+
+#### **AI-Powered Semantic Matching** (Optional)
+Find elements by meaning:
+```python
+# Find elements semantically similar to description
+elements = advanced.find_by_semantic_similarity("contact information")
+```
+
+## 📝 Enhanced Template Creation
+
+The interactive template creation now includes:
+
+1. **Engine Selection**: Choose between Selenium, Playwright, or Requests
+2. **Rate Limiting Configuration**: Set appropriate speed limits
+3. **Pattern Extraction Setup**: Enable automatic data extraction
+4. **Fallback Strategies**: Configure backup element selection methods
+5. **Advanced Selectors**: Add text-based fallbacks for each field
+
+### Example Enhanced Template Creation Flow:
+
+```
+🔧 Enhanced Interactive Template Creation v2.0
+==================================================
+
+⚙️  Select Scraping Engine:
+1. Selenium (Default) - Full JavaScript support
+2. Playwright - Faster JavaScript handling
+3. Requests - Fast for static HTML
+
+> 2
+
+⏱️  Configure Rate Limiting:
+1. Respectful Bot - 0.2 req/sec
+2. Conservative - 0.5 req/sec
+3. Moderate - 1 req/sec
+4. Aggressive - 5 req/sec
+5. No rate limiting
+
+> 1
+
+🔍 Configure Pattern-Based Extraction:
+Enable email extraction? [Y/n]: y
+Enable phone extraction? [Y/n]: y
+Enable education extraction? [Y/n]: y
+
+🛡️  Configure Fallback Strategies:
+Enable text-based selection? [Y/n]: y
+Enable proximity selection? [Y/n]: y
+```
+
+## 🔄 Template Structure v2.1
+
+Enhanced templates include new sections:
+
+```json
+{
+  "name": "enhanced_template",
+  "version": "2.1",
+  "engine": "playwright",
+  "rate_limiting": {
+    "enabled": true,
+    "preset": "respectful_bot"
+  },
+  "site_info": {
+    "url": "https://example.com"
+  },
+  "scraping_type": "list_detail",
+  "list_page_rules": {
+    "fields": {
+      "name": "h3.name",
+      "title": ".position"
+    },
+    "advanced_selectors": {
+      "use_text_content": {
+        "name": "Name:",
+        "title": "Position:"
+      }
+    },
+    "load_strategy": {
+      "type": "auto",
+      "consecutive_failure_limit": 3
+    }
+  },
+  "detail_page_rules": {
+    "fields": {
+      "email": "",  // Pattern extraction
+      "phone": "",  // Pattern extraction
+      "bio": ".biography"
+    },
+    "extraction_patterns": {
+      "email": {
+        "enabled": true,
+        "context_keywords": ["email", "contact"]
+      },
+      "phone": {
+        "enabled": true,
+        "context_keywords": ["phone", "tel"]
+      }
+    }
+  },
+  "fallback_strategies": {
+    "text_based_selection": true,
+    "proximity_selection": true,
+    "pattern_matching_primary": false
+  }
+}
+```
+
+## 🛠️ CLI Commands
+
+### New Commands:
+
+```bash
+# Create enhanced template
+python -m scraper create
+
+# Apply template with options
+python -m scraper apply template.json \
+  --engine playwright \
+  --rate-limit respectful_bot \
+  --export json csv
+
+# Migrate templates
+python -m scraper migrate [template.json]
+
+# Test pattern extraction
+python -m scraper test-patterns --text "Contact: john@example.com (555) 123-4567"
+
+# Analyze website
+python -m scraper analyze https://example.com
+```
+
+## 🔍 Pattern Extraction Examples
+
+### Test Pattern Extraction:
+```python
+from scraper.extractors.pattern_extractor import PatternExtractor
+
+extractor = PatternExtractor()
+text = """
+John Doe, JD, Harvard Law School, 2010
+Email: john.doe@lawfirm.com
+Phone: (555) 123-4567
+Admitted to the New York Bar in 2011.
+"""
+
+# Extract specific pattern
+email = extractor.extract(text, 'email')  # john.doe@lawfirm.com
+
+# Extract all occurrences
+educations = extractor.extract_all(text, 'education')  # ['JD, Harvard Law School, 2010']
+
+# Extract multiple patterns
+data = extractor.extract_multiple_patterns(text, ['email', 'phone', 'bar_admission'])
+```
+
+## ⚡ Performance Comparison
+
+| Engine | JavaScript | Speed | Resource Usage | Best For |
+|--------|------------|-------|----------------|----------|
+| Selenium | ✅ Full | ⭐⭐ | High | Complex interactions |
+| Playwright | ✅ Full | ⭐⭐⭐⭐ | Medium | Modern web apps |
+| Requests | ❌ None | ⭐⭐⭐⭐⭐ | Low | Static sites, APIs |
+
+## 🚨 Troubleshooting
+
+### Playwright Not Working
+```bash
+# Install Playwright
+pip install playwright
+playwright install
+
+# If still issues, install specific browser
+playwright install chromium
+```
+
+### Rate Limiting Too Slow
+- Use burst tokens for occasional speed-ups
+- Adjust preset in template configuration
+- Consider parallel scraping with thread pool
+
+### Pattern Extraction Missing Data
+- Add more context keywords
+- Check if data format matches pattern
+- Use custom patterns for unique formats
+
+### Elements Not Found
+1. Try text-based fallback
+2. Enable proximity selection
+3. Use more general selectors
+4. Check if content is dynamically loaded
+
+## 🎯 Best Practices
+
+1. **Always use rate limiting** - Be respectful to websites
+2. **Start with pattern extraction** - Let the scraper find data automatically
+3. **Configure fallbacks** - Make your scrapers resilient to changes
+4. **Use Playwright for modern sites** - Better performance than Selenium
+5. **Test patterns first** - Use `test-patterns` command before scraping
+6. **Migrate old templates** - Take advantage of new features
+
+## 📚 Advanced Examples
+
+### Custom Pattern Addition
+```python
+extractor = PatternExtractor()
+extractor.add_custom_pattern(
+    'case_number',
+    r'Case No\.\s*(\d{4}-[A-Z]{2}-\d{4})',
+    context_keywords=['case', 'docket']
 )
-
-scraper.close()
 ```
 
-## General Usage
-
-Run the scraper's command line interface by calling the package as a module:
-
-```bash
-python -m scraper <command> [options]
-```
-
-Common commands include:
-- `create` - interactively build a scraping template.
-- `apply` - run a saved template and export results.
-- `batch` - process templates in a directory.
-- `extract` - quickly scrape specific elements.
-
-Run `python -m scraper --help` for a full list of options.
-
-## Project Structure
-
-- `src/scraper/`: Main package directory
-  - `core/`: Core scraping functionality
-  - `extractors/`: Data extraction modules
-  - `exporters/`: Export format handlers
-  - `handlers/`: Special functionality (cookies, pagination)
-  - `models/`: Data models and enums
-  - `utils/`: Utility functions
-  - `config/`: Configuration settings
-A simplified directory tree is also available in `file_structure.txt`.
-
-## Configuration
-
-Edit `src/scraper/config/settings.py` to customize:
-
+### Composite Selection Strategy
 ```python
-# Timeouts
-DEFAULT_TIMEOUT = 10
-MAX_RETRIES = 3
-
-# Batch processing
-BATCH_SIZE = 250
-PROGRESS_LOG_INTERVAL = 100
-
-# Directories
-OUTPUT_DIR = Path('output')
-TEMPLATES_DIR = Path('templates')
-LOGS_DIR = Path('logs')
+# Find element using multiple strategies
+strategies = [
+    {'type': 'text', 'text': 'Email:', 'fuzzy': True},
+    {'type': 'css', 'selector': '.contact-info'}
+]
+elements = advanced.find_by_composite_strategy(strategies)
 ```
 
-## Advanced Usage
-
-### Handling Large Datasets
-
+### Rate-Limited Parallel Scraping
 ```python
-from scraper.core import TemplateScraper
-from scraper.handlers import LargeDatasetHandler
+from concurrent.futures import ThreadPoolExecutor
 
-scraper = TemplateScraper(headless=True)
-scraper.enable_large_dataset_mode()
-
-# Scrapes with batch processing and intermediate saves
-result = scraper.apply_template('templates/large_site.json')
+with ThreadPoolExecutor(max_workers=5) as executor:
+    for url in urls:
+        # Rate limiter ensures respectful scraping
+        rate_limiter.acquire(url)
+        executor.submit(scrape_page, url)
 ```
 
-### Custom Cookie Handling
+## 🔮 Future Enhancements
 
-```python
-from scraper.handlers import CookieHandler
+Coming soon:
+- Visual element detection using computer vision
+- Automatic CAPTCHA handling
+- Cloud deployment options
+- API endpoint generation from templates
+- Machine learning for adaptive selectors
 
-# Custom cookie selector
-scraper.cookie_handler.add_custom_selector(
-    "//button[@id='accept-cookies']"
-)
+---
 
-# Or use CSS selector
-scraper.cookie_handler.add_custom_selector(
-    "button.cookie-accept",
-    selector_type='css'
-)
-```
-
-### Custom Extractors
-
-```python
-from scraper.extractors import ElementExtractor
-
-class CustomExtractor(ElementExtractor):
-    def extract_custom_data(self, selector):
-        # Your custom extraction logic
-        pass
-
-# Register custom extractor
-scraper.register_extractor('custom', CustomExtractor)
-```
-
-## Command Line Interface
-
-```bash
-# Create template
-python -m scraper create --url https://example.com
-
-# Apply template
-python -m scraper apply templates/example.json --export json csv
-
-# Batch scraping
-python -m scraper batch --templates-dir ./templates --headless
-
-# Extract specific elements
-python -m scraper extract https://example.com --elements tables links
-```
-
-## Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run specific test module
-pytest tests/test_extractors.py
-
-# Run with coverage
-pytest --cov=scraper tests/
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Selenium WebDriver for browser automation
-- BeautifulSoup for HTML parsing assistance
-- Pandas for data manipulation and export
-
-```
-interactive-web-scraper/
-│
-├── README.md                    # Project documentation
-├── requirements.txt             # Python dependencies
-├── setup.py                     # Package setup file
-│
-├── src/
-│   └── scraper/
-│       ├── __init__.py
-│       ├── core/               # Core scraping functionality
-│       │   ├── __init__.py
-│       │   ├── base_scraper.py
-│       │   ├── interactive_scraper.py
-│       │   └── template_scraper.py
-│       │
-│       ├── extractors/         # Data extraction modules
-│       │   ├── __init__.py
-│       │   ├── element_extractor.py
-│       │   ├── table_extractor.py
-│       │   └── metadata_extractor.py
-│       │
-│       ├── exporters/          # Data export modules
-│       │   ├── __init__.py
-│       │   ├── base_exporter.py
-│       │   ├── json_exporter.py
-│       │   ├── csv_exporter.py
-│       │   ├── excel_exporter.py
-│       │   └── html_exporter.py
-│       │
-│       ├── handlers/           # Special handlers
-│       │   ├── __init__.py
-│       │   ├── cookie_handler.py
-│       │   ├── pagination_handler.py
-│       │   └── load_more_handler.py
-│       │
-│       ├── models/             # Data models
-│       │   ├── __init__.py
-│       │   └── data_models.py
-│       │
-│       ├── utils/              # Utility functions
-│       │   ├── __init__.py
-│       │   ├── selectors.py
-│       │   ├── retry.py
-│       │   └── logging_config.py
-│       │
-│       └── config/             # Configuration
-│           ├── __init__.py
-│           └── settings.py
-│
-├── assets/                     # Static assets
-│   └── js/
-│       └── interactive_selector.js
-│
-├── templates/                  # Scraping templates
-│   └── examples/
-│       └── gibson_dunn.json
-│
-├── output/                     # Default output directory
-│   └── .gitkeep
-│
-├── logs/                       # Log files
-│   └── .gitkeep
-│
-├── examples/                   # Usage examples
-│   ├── basic_usage.py
-│   ├── template_creation.py
-│   ├── batch_scraping.py
-│   └── large_dataset_example.py
-│
-└── tests/                      # Unit tests
-    ├── __init__.py
-    ├── test_base_scraper.py
-    ├── test_extractors.py
-    ├── test_exporters.py
-    └── test_handlers.py
-```
+For more information, see the [examples](examples/) directory or run the interactive demos with `python examples/advanced_features_demo.py`.
