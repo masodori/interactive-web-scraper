@@ -89,17 +89,25 @@ class EnhancedTemplateScraper(TemplateScraper):
     
     def _init_playwright(self):
         """Initialize Playwright components"""
+        self.logger.info("🎭 Initializing Playwright engine for enhanced template scraper...")
+        
         try:
+            self.logger.info("🚀 Creating PlaywrightScraper instance...")
             self.playwright_scraper = PlaywrightScraper(
                 headless=self.headless,
                 browser_type='chromium'
             )
+            
+            self.logger.info("⚙️  Running async browser initialization...")
             # Run async initialization
             asyncio.run(self.playwright_scraper._init_browser())
+            
+            self.logger.info("🔧 Creating PlaywrightExtractor...")
             self.playwright_extractor = PlaywrightExtractor(self.playwright_scraper.page)
-            self.logger.info("Playwright engine initialized")
+            
+            self.logger.info("✅ Playwright engine fully initialized for template scraping")
         except Exception as e:
-            self.logger.error(f"Failed to initialize Playwright: {e}")
+            self.logger.error(f"❌ Failed to initialize Playwright: {e}")
             raise
     
     def apply_template(self, template_path: str, 
@@ -153,29 +161,43 @@ class EnhancedTemplateScraper(TemplateScraper):
     def _apply_template_playwright(self, template: ScrapingTemplate,
                                  export_formats: Optional[List[ExportFormat]] = None) -> ScrapeResult:
         """Apply template using Playwright engine"""
+        self.logger.info("🎭 Starting Playwright template application...")
+        self.logger.info(f"📋 Template: {template.name}")
+        self.logger.info(f"🌐 Target URL: {template.site_info.url}")
+        self.logger.info(f"📊 Scraping type: {template.scraping_type.value}")
+        
         start_time = datetime.now()
         items: List[ScrapedItem] = []
         errors: List[str] = []
         
         async def scrape_async():
             try:
+                self.logger.info("🚀 Starting async scraping process...")
+                
                 # Navigate to URL
+                self.logger.info("🌐 Navigating to target URL...")
                 await self.playwright_scraper.navigate_to(template.site_info.url)
                 
                 # Handle cookies
+                self.logger.info("🍪 Handling cookie banners...")
                 await self.playwright_scraper.handle_cookies()
                 
                 # Scrape based on type
                 if template.scraping_type == ScrapingType.SINGLE_PAGE:
+                    self.logger.info("📄 Scraping single page...")
                     items.extend(await self._scrape_single_page_playwright(template))
                 else:
+                    self.logger.info("📋 Scraping list page...")
                     items.extend(await self._scrape_list_page_playwright(template))
                     
+                self.logger.info(f"✅ Scraping completed. Found {len(items)} items")
+                    
             except Exception as e:
-                self.logger.error(f"Playwright scraping error: {e}")
+                self.logger.error(f"❌ Playwright scraping error: {e}")
                 errors.append(str(e))
         
         # Run async scraping
+        self.logger.info("⚙️  Running async scraping loop...")
         asyncio.run(scrape_async())
         
         # Create result
@@ -369,10 +391,16 @@ class EnhancedTemplateScraper(TemplateScraper):
     
     def close(self):
         """Clean up resources"""
-        if hasattr(self, 'playwright_scraper'):
-            asyncio.run(self.playwright_scraper.close())
+        self.logger.info("🧹 Cleaning up Enhanced Template Scraper resources...")
         
+        if hasattr(self, 'playwright_scraper'):
+            self.logger.info("🎭 Closing Playwright scraper...")
+            asyncio.run(self.playwright_scraper.close())
+            self.logger.info("✅ Playwright scraper closed")
+        
+        self.logger.info("🔧 Closing parent scraper resources...")
         super().close()
+        self.logger.info("✅ Enhanced Template Scraper cleanup complete")
     
     def get_scraping_stats(self) -> Dict[str, Any]:
         """Get scraping statistics including rate limiting"""

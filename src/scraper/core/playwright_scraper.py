@@ -58,35 +58,49 @@ class PlaywrightScraper:
     
     async def _init_browser(self):
         """Initialize Playwright browser and page"""
+        self.logger.info("🚀 Starting Playwright browser initialization...")
+        
         self.playwright = await async_playwright().start()
+        self.logger.info("✅ Playwright runtime started")
         
         # Select browser
         if self.browser_type == "firefox":
             browser_engine = self.playwright.firefox
+            self.logger.info("🦊 Using Firefox browser engine")
         elif self.browser_type == "webkit":
             browser_engine = self.playwright.webkit
+            self.logger.info("🍎 Using WebKit browser engine")
         else:
             browser_engine = self.playwright.chromium
+            self.logger.info("🌐 Using Chromium browser engine")
         
         # Launch browser with options
+        self.logger.info(f"🔧 Launching browser (headless: {self.headless})...")
         self.browser = await browser_engine.launch(
             headless=self.headless,
             args=['--disable-blink-features=AutomationControlled']
         )
+        self.logger.info("✅ Browser launched successfully")
         
         # Create context with viewport and user agent
+        self.logger.info("🖥️  Creating browser context with viewport 1920x1080...")
         context = await self.browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         )
+        self.logger.info("✅ Browser context created")
         
         # Create page
+        self.logger.info("📄 Creating new page...")
         self.page = await context.new_page()
+        self.logger.info("✅ New page created")
         
         # Set default timeout
-        self.page.set_default_timeout(self.config.DEFAULT_TIMEOUT * 1000)
+        timeout_ms = self.config.DEFAULT_TIMEOUT * 1000
+        self.page.set_default_timeout(timeout_ms)
+        self.logger.info(f"⏱️  Default timeout set to {timeout_ms}ms")
         
-        self.logger.info(f"Playwright browser initialized ({self.browser_type})")
+        self.logger.info(f"🎉 Playwright browser fully initialized ({self.browser_type})")
     
     async def navigate_to(self, url: str, wait_until: str = "networkidle") -> bool:
         """
@@ -100,33 +114,52 @@ class PlaywrightScraper:
             True if successful
         """
         try:
+            self.logger.info(f"🌐 Navigating to: {url}")
+            self.logger.info(f"⏳ Wait condition: {wait_until}")
+            
             await self.page.goto(url, wait_until=wait_until)
             self.current_url = url
-            self.logger.info(f"Navigated to {url}")
+            
+            # Get page title for confirmation
+            title = await self.page.title()
+            self.logger.info(f"✅ Successfully navigated to: {url}")
+            self.logger.info(f"📄 Page title: {title}")
+            
             return True
         except PlaywrightTimeout:
-            self.logger.error(f"Timeout navigating to {url}")
+            self.logger.error(f"❌ Timeout navigating to {url} (wait condition: {wait_until})")
             return False
         except Exception as e:
-            self.logger.error(f"Failed to navigate to {url}: {e}")
+            self.logger.error(f"❌ Failed to navigate to {url}: {e}")
             return False
     
     async def wait_for_selector(self, selector: str, timeout: int = None) -> bool:
         """Wait for element to appear"""
         timeout = timeout or self.config.DEFAULT_TIMEOUT
+        self.logger.info(f"⏳ Waiting for selector: {selector} (timeout: {timeout}s)")
+        
         try:
             await self.page.wait_for_selector(selector, timeout=timeout * 1000)
+            self.logger.info(f"✅ Selector found: {selector}")
             return True
         except PlaywrightTimeout:
+            self.logger.warning(f"⏰ Timeout waiting for selector: {selector}")
             return False
     
     async def get_text(self, selector: str) -> Optional[str]:
         """Get text content of element"""
+        self.logger.debug(f"🔍 Getting text for selector: {selector}")
+        
         try:
             element = await self.page.query_selector(selector)
             if element:
-                return await element.text_content()
-            return None
+                text = await element.text_content()
+                text_preview = text[:100] + "..." if len(text) > 100 else text
+                self.logger.debug(f"✅ Text extracted: {text_preview}")
+                return text
+            else:
+                self.logger.debug(f"❌ Element not found: {selector}")
+                return None
         except Exception as e:
             self.logger.debug(f"Error getting text from {selector}: {e}")
             return None
@@ -159,11 +192,14 @@ class PlaywrightScraper:
     async def click(self, selector: str, timeout: int = None) -> bool:
         """Click element"""
         timeout = timeout or self.config.DEFAULT_TIMEOUT
+        self.logger.info(f"👆 Clicking element: {selector}")
+        
         try:
             await self.page.click(selector, timeout=timeout * 1000)
+            self.logger.info(f"✅ Successfully clicked: {selector}")
             return True
         except PlaywrightTimeout:
-            self.logger.warning(f"Timeout clicking {selector}")
+            self.logger.warning(f"⏰ Timeout clicking {selector} (timeout: {timeout}s)")
             return False
         except Exception as e:
             self.logger.warning(f"Error clicking {selector}: {e}")
@@ -176,8 +212,10 @@ class PlaywrightScraper:
         Returns:
             Number of scrolls performed
         """
+        self.logger.info(f"📜 Starting infinite scroll (pause: {pause}s)")
         scrolls = 0
         last_height = await self.page.evaluate("document.body.scrollHeight")
+        self.logger.info(f"📏 Initial page height: {last_height}px")
         
         while True:
             await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -185,7 +223,10 @@ class PlaywrightScraper:
             scrolls += 1
             
             new_height = await self.page.evaluate("document.body.scrollHeight")
+            self.logger.debug(f"📜 Scroll #{scrolls}: {last_height}px → {new_height}px")
+            
             if new_height == last_height:
+                self.logger.info(f"✅ Reached bottom after {scrolls} scrolls")
                 break
             last_height = new_height
         
@@ -277,30 +318,44 @@ class PlaywrightScraper:
     
     async def close(self):
         """Close browser and cleanup"""
-        if self.page:
-            await self.page.close()
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
+        self.logger.info("🛑 Starting Playwright browser cleanup...")
         
-        self.logger.info("Playwright browser closed")
+        if self.page:
+            self.logger.info("📄 Closing page...")
+            await self.page.close()
+            self.logger.info("✅ Page closed")
+            
+        if self.browser:
+            self.logger.info("🌐 Closing browser...")
+            await self.browser.close()
+            self.logger.info("✅ Browser closed")
+            
+        if self.playwright:
+            self.logger.info("🎭 Stopping Playwright runtime...")
+            await self.playwright.stop()
+            self.logger.info("✅ Playwright runtime stopped")
+        
+        self.logger.info("🎉 Playwright browser fully closed")
     
     # Synchronous wrapper methods for compatibility
     def navigate_to_sync(self, url: str) -> bool:
         """Synchronous wrapper for navigate_to"""
+        self.logger.info(f"🔄 Running async navigate_to synchronously for: {url}")
         return asyncio.run(self.navigate_to(url))
     
     def get_text_sync(self, selector: str) -> Optional[str]:
         """Synchronous wrapper for get_text"""
+        self.logger.debug(f"🔄 Running async get_text synchronously for: {selector}")
         return asyncio.run(self.get_text(selector))
     
     def click_sync(self, selector: str) -> bool:
         """Synchronous wrapper for click"""
+        self.logger.info(f"🔄 Running async click synchronously for: {selector}")
         return asyncio.run(self.click(selector))
     
     def close_sync(self):
         """Synchronous wrapper for close"""
+        self.logger.info("🔄 Running async close synchronously")
         asyncio.run(self.close())
 
 
