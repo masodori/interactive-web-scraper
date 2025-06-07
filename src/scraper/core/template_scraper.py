@@ -20,6 +20,7 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     ElementNotInteractableException,
 )
+from scraper.models.data_models import LoadStrategy
 
 # Engine-specific imports
 from .base_scraper import BaseScraper
