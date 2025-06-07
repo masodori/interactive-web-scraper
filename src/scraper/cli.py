@@ -263,6 +263,11 @@ def _run_apply_safe(args: argparse.Namespace = None):
         export_formats = [ExportFormat(fmt) for fmt in (args.export if hasattr(args, 'export') else ['json'])]
     else:
         # Interactive mode
+        if not Config.TEMPLATES_DIR.exists():
+            print("\n❌ Templates directory not found.")
+            print(f"   Directory: {Config.TEMPLATES_DIR}")
+            return
+
         templates = list(Config.TEMPLATES_DIR.glob("*.json"))
         
         if not templates:
