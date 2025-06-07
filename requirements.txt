@@ -12,9 +12,15 @@ openpyxl>=3.1.0  # For Excel export
 # Utilities
 python-dateutil>=2.8.2
 
+# New dependencies for improvements
+playwright>=1.40.0  # For Playwright engine support
+sentence-transformers>=2.2.0  # For AI-powered element detection (optional)
+numpy>=1.24.0  # For similarity calculations
+
 # Development dependencies (optional)
 pytest>=7.4.0
 pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0  # For async tests
 black>=23.0.0
 flake8>=6.0.0
 
