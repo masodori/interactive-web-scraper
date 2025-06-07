@@ -174,6 +174,60 @@ class BaseScraper:
             self.logger.error(f"Failed to take screenshot: {e}")
             return None
 
+    def inject_interactive_selector(self, context_message: str = "Select elements") -> bool:
+        """
+        Injects the interactive selector JavaScript into the page.
+        
+        Args:
+            context_message: Message to display in the overlay
+            
+        Returns:
+            True if injection successful, False otherwise
+        """
+        try:
+            # Load the JavaScript file
+            js_path = self.config.get_js_asset_path(self.config.INTERACTIVE_JS_FILENAME)
+            with open(js_path, 'r', encoding='utf-8') as f:
+                js_content = f.read()
+            
+            # Set context message
+            self.driver.execute_script(f"window.scraperContextMessage = '{context_message}';")
+            
+            # Inject the JavaScript
+            self.driver.execute_script(js_content)
+            
+            self.logger.info("Interactive selector JavaScript injected successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to inject interactive selector: {e}")
+            return False
+    
+    def get_selected_element_data(self) -> Optional[dict]:
+        """
+        Retrieves the selected element data from the hidden input.
+        
+        Returns:
+            Dictionary with selector and text, or None if no selection
+        """
+        try:
+            value = self.driver.execute_script(
+                "return document.getElementById('selected_element_data') ? "
+                "document.getElementById('selected_element_data').value : '';"
+            )
+            
+            if value and value != '' and value != 'DONE_SELECTING':
+                import json
+                return json.loads(value)
+            elif value == 'DONE_SELECTING':
+                return {'done': True}
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get selected element data: {e}")
+            return None
+
     def close(self):
         """Safely quits the WebDriver."""
         if self.driver:
