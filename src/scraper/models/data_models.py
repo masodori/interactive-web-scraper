@@ -233,10 +233,11 @@ class SiteInfo:
 class ScrapingTemplate:
     """Complete scraping template"""
 
+    # Non-default fields must come first for dataclasses
     name: str
-    engine: str = "selenium"
     site_info: SiteInfo
     scraping_type: ScrapingType
+    engine: str = "selenium"
     list_page_rules: Optional[TemplateRules] = None
     detail_page_rules: Optional[TemplateRules] = None
     field_mappings: Dict[str, str] = field(default_factory=dict)
