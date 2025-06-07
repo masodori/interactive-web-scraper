@@ -66,8 +66,19 @@ class EnhancedTemplateScraper:
                 ExportFormat.HTML: HtmlExporter(),
             }
         else:
-            # Initialize base class for selenium/requests
-            super().__init__(engine, headless)
+            # Initialize without super() call as we don't inherit from a base class
+            self.logger = logging.getLogger(f'{__name__}.EnhancedTemplateScraper')
+            self.config = Config()
+            self.engine = engine
+            self.headless = headless
+            
+            # Initialize exporters
+            self.exporters = {
+                ExportFormat.JSON: JsonExporter(),
+                ExportFormat.CSV: CsvExporter(),
+                ExportFormat.EXCEL: ExcelExporter(),
+                ExportFormat.HTML: HtmlExporter(),
+            }
         
         # Initialize rate limiter
         rate_config = RATE_LIMIT_PRESETS.get(rate_limit_preset)

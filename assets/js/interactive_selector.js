@@ -1,10 +1,11 @@
-// Interactive Element Selector for Web Scraping
+// Interactive Element Selector for Web Scraping - Simplified Version
 // This script creates an overlay that allows users to click on elements to generate CSS selectors
 
 (function() {
+  'use strict';
+  
   // Avoid double-injection
   if (document.getElementById('scrapeOverlay')) {
-    // Update context message if overlay already exists
     const titleDiv = document.getElementById('scrapeOverlayTitle');
     if (titleDiv && window.scraperContextMessage) {
       titleDiv.textContent = window.scraperContextMessage;
@@ -13,61 +14,62 @@
     return;
   }
 
-  // ======== Helper: Generate a unique CSS selector for a given element ========
+  // State
+  let isActive = true;
+  let hoveredElement = null;
+  let selectedElement = null;
+
+  // ======== Helper: Generate CSS selector ========
   function getCssSelector(el) {
     if (!(el instanceof Element)) return null;
 
-    // If element has ID, return '#id'
+    // If element has a good ID, use it
     if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) {
       return `#${CSS.escape(el.id)}`;
     }
 
-    // Build the path segments array
-    const segments = [];
+    // Build path
+    const path = [];
     let current = el;
-    while (current && current.nodeType === Node.ELEMENT_NODE && current !== document.body) {
-      let segment = current.tagName.toLowerCase();
-
-      // If element has classes, try to pick a unique class among siblings
-      const classList = Array.from(current.classList).filter(c => c.trim().length > 0);
-      if (classList.length) {
-        // Try each class to see if it's unique among siblings
-        for (const cls of classList) {
-          if (!current.parentNode) break;
-          const sameClassSiblings = Array.from(current.parentNode.children).filter(
-            sib => sib !== current && sib.classList.contains(cls)
-          );
-          if (sameClassSiblings.length === 0) {
-            segment += `.${CSS.escape(cls)}`;
-            break;
-          }
+    
+    while (current && current !== document.body) {
+      let selector = current.tagName.toLowerCase();
+      
+      // Add class if unique among siblings
+      if (current.className) {
+        const classes = Array.from(current.classList)
+          .filter(c => c && !c.includes('scraper-highlight'))
+          .map(c => `.${CSS.escape(c)}`)
+          .join('');
+        if (classes) {
+          selector += classes;
         }
       }
-
-      // If no unique class chosen or no classes at all, use nth-of-type
-      if (!segment.includes('.')) {
-        const nth = Array.prototype.indexOf.call(
-          current.parentNode.children,
-          current
-        ) + 1;
-        if (nth > 1) {
-          segment += `:nth-of-type(${nth})`;
+      
+      // Add nth-child if needed for uniqueness
+      if (current.parentElement) {
+        const siblings = Array.from(current.parentElement.children);
+        const sameTagSiblings = siblings.filter(s => 
+          s.tagName === current.tagName && 
+          s.className === current.className
+        );
+        
+        if (sameTagSiblings.length > 1) {
+          const index = sameTagSiblings.indexOf(current) + 1;
+          selector += `:nth-of-type(${index})`;
         }
       }
-
-      segments.unshift(segment);
-      current = current.parentNode;
+      
+      path.unshift(selector);
+      current = current.parentElement;
     }
-
-    return segments.join(' > ');
+    
+    return path.join(' > ');
   }
 
-  // ======== Helper: Get element's text content (trimmed) ========
-  function getElementText(el) {
-    return el.textContent.trim().substring(0, 100);
-  }
-
-  // ======== Create Overlay ========
+  // ======== Create UI Elements ========
+  
+  // Overlay (visual only, no interaction)
   const overlay = document.createElement('div');
   overlay.id = 'scrapeOverlay';
   overlay.style.cssText = `
@@ -76,186 +78,217 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.3);
-    z-index: 999999;
-    cursor: crosshair;
+    background: rgba(0, 0, 0, 0.2);
+    z-index: 2147483645;
+    pointer-events: none;
   `;
 
-  // ======== Create Info Box ========
-  const infoBox = document.createElement('div');
-  infoBox.style.cssText = `
+  // Info Panel
+  const infoPanel = document.createElement('div');
+  infoPanel.style.cssText = `
     position: fixed;
-    top: 10px;
+    top: 20px;
     left: 50%;
     transform: translateX(-50%);
     background: white;
-    padding: 15px 25px;
+    border: 2px solid #2196F3;
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    z-index: 1000000;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    min-width: 300px;
-    text-align: center;
-  `;
-
-  // Add title
-  const title = document.createElement('div');
-  title.id = 'scrapeOverlayTitle';
-  title.style.cssText = `
-    font-size: 18px;
-    font-weight: bold;
-    margin-bottom: 10px;
-    color: #333;
-  `;
-  title.textContent = window.scraperContextMessage || 'Click on an element to select it';
-  delete window.scraperContextMessage;
-  infoBox.appendChild(title);
-
-  // Add instructions
-  const instructions = document.createElement('div');
-  instructions.style.cssText = `
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 2147483646;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     font-size: 14px;
-    color: #666;
-    margin-bottom: 15px;
+    min-width: 400px;
+    max-width: 600px;
   `;
-  instructions.textContent = 'Hover to highlight • Click to select • ESC to cancel';
-  infoBox.appendChild(instructions);
 
-  // Add done button
-  const doneBtn = document.createElement('button');
-  doneBtn.style.cssText = `
-    background: #4CAF50;
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    margin-right: 10px;
+  infoPanel.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; color: #333; font-size: 18px;">
+      ${window.scraperContextMessage || 'Click on an element to select it'}
+    </h3>
+    <p style="margin: 0 0 15px 0; color: #666;">
+      Move your mouse over elements to highlight them. Click to select.
+    </p>
+    <div style="display: flex; gap: 10px; justify-content: center;">
+      <button id="scraper-done-btn" style="
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      ">Done</button>
+      <button id="scraper-cancel-btn" style="
+        background: #f44336;
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      ">Cancel</button>
+    </div>
+    <div id="scraper-selection-info" style="margin-top: 15px; display: none;">
+      <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+        <div id="scraper-selector-text"></div>
+      </div>
+    </div>
   `;
-  doneBtn.textContent = 'Done Selecting';
-  doneBtn.onclick = function() {
-    // Signal that we're done
+
+  // ======== Event Handlers ========
+  
+  function highlightElement(element) {
+    if (!element || element === hoveredElement) return;
+    
+    // Remove previous highlight
+    if (hoveredElement) {
+      hoveredElement.classList.remove('scraper-highlight-hover');
+    }
+    
+    // Add new highlight
+    hoveredElement = element;
+    hoveredElement.classList.add('scraper-highlight-hover');
+  }
+
+  function selectElement(element) {
+    if (!element || !isActive) return;
+    
+    // Store selection data
+    const selector = getCssSelector(element);
+    const text = element.textContent.trim().substring(0, 100);
+    
+    const data = {
+      selector: selector,
+      text: text,
+      tagName: element.tagName.toLowerCase(),
+      classes: Array.from(element.classList).filter(c => !c.includes('scraper-'))
+    };
+    
+    // Update or create hidden input
+    let input = document.getElementById('selected_element_data');
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'hidden';
+      input.id = 'selected_element_data';
+      document.body.appendChild(input);
+    }
+    input.value = JSON.stringify(data);
+    
+    // Visual feedback
+    if (selectedElement) {
+      selectedElement.classList.remove('scraper-highlight-selected');
+    }
+    selectedElement = element;
+    selectedElement.classList.add('scraper-highlight-selected');
+    
+    // Update info panel
+    const infoDiv = document.getElementById('scraper-selection-info');
+    const selectorText = document.getElementById('scraper-selector-text');
+    infoDiv.style.display = 'block';
+    selectorText.textContent = `Selected: ${selector}`;
+    
+    // Auto close after 2 seconds
+    setTimeout(cleanup, 2000);
+  }
+
+  function handleMouseMove(e) {
+    if (!isActive) return;
+    
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    if (element && !infoPanel.contains(element)) {
+      highlightElement(element);
+    }
+  }
+
+  function handleClick(e) {
+    if (!isActive) return;
+    
+    const element = e.target;
+    
+    // Ignore clicks on our UI
+    if (infoPanel.contains(element)) {
+      return;
+    }
+    
+    // Prevent the click from doing anything else
+    e.preventDefault();
+    e.stopPropagation();
+    
+    selectElement(element);
+  }
+
+  function handleKeyPress(e) {
+    if (e.key === 'Escape') {
+      cleanup();
+    }
+  }
+
+  function cleanup() {
+    isActive = false;
+    
+    // Remove highlights
+    document.querySelectorAll('.scraper-highlight-hover, .scraper-highlight-selected').forEach(el => {
+      el.classList.remove('scraper-highlight-hover', 'scraper-highlight-selected');
+    });
+    
+    // Remove elements
+    overlay.remove();
+    infoPanel.remove();
+    
+    // Remove styles
+    const styleElement = document.getElementById('scraper-styles');
+    if (styleElement) styleElement.remove();
+    
+    // Remove event listeners
+    document.removeEventListener('mousemove', handleMouseMove, true);
+    document.removeEventListener('click', handleClick, true);
+    document.removeEventListener('keydown', handleKeyPress, true);
+  }
+
+  // ======== Setup ========
+  
+  // Add styles
+  const styles = document.createElement('style');
+  styles.id = 'scraper-styles';
+  styles.textContent = `
+    .scraper-highlight-hover {
+      outline: 2px solid #2196F3 !important;
+      outline-offset: 2px !important;
+      cursor: pointer !important;
+    }
+    .scraper-highlight-selected {
+      outline: 3px solid #4CAF50 !important;
+      outline-offset: 2px !important;
+      background-color: rgba(76, 175, 80, 0.1) !important;
+    }
+  `;
+  document.head.appendChild(styles);
+
+  // Add elements to page
+  document.body.appendChild(overlay);
+  document.body.appendChild(infoPanel);
+
+  // Attach event listeners
+  document.addEventListener('mousemove', handleMouseMove, true);
+  document.addEventListener('click', handleClick, true);
+  document.addEventListener('keydown', handleKeyPress, true);
+
+  // Button handlers
+  document.getElementById('scraper-done-btn').onclick = function() {
     if (!document.getElementById('selected_element_data')) {
       const input = document.createElement('input');
       input.type = 'hidden';
       input.id = 'selected_element_data';
       input.value = 'DONE_SELECTING';
       document.body.appendChild(input);
-    } else {
-      document.getElementById('selected_element_data').value = 'DONE_SELECTING';
     }
     cleanup();
   };
-  infoBox.appendChild(doneBtn);
 
-  // Add cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.style.cssText = `
-    background: #f44336;
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-  `;
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.onclick = cleanup;
-  infoBox.appendChild(cancelBtn);
+  document.getElementById('scraper-cancel-btn').onclick = cleanup;
 
-  // ======== Hover Effect ========
-  let hoveredElement = null;
-
-  function handleMouseMove(e) {
-    // Remove previous highlight
-    if (hoveredElement) {
-      hoveredElement.style.outline = '';
-    }
-
-    // Find element under cursor (excluding our overlay)
-    const element = document.elementFromPoint(e.clientX, e.clientY);
-    
-    if (element && element !== overlay && element !== infoBox && !infoBox.contains(element)) {
-      hoveredElement = element;
-      hoveredElement.style.outline = '3px solid #2196F3';
-    }
-  }
-
-  // ======== Click Handler ========
-  function handleClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const element = document.elementFromPoint(e.clientX, e.clientY);
-    
-    if (element && element !== overlay && element !== infoBox && !infoBox.contains(element)) {
-      const selector = getCssSelector(element);
-      const text = getElementText(element);
-      
-      // Store the selected element data
-      const data = {
-        selector: selector,
-        text: text,
-        tagName: element.tagName.toLowerCase(),
-        classes: Array.from(element.classList)
-      };
-
-      // Create or update hidden input with selection data
-      let input = document.getElementById('selected_element_data');
-      if (!input) {
-        input = document.createElement('input');
-        input.type = 'hidden';
-        input.id = 'selected_element_data';
-        document.body.appendChild(input);
-      }
-      input.value = JSON.stringify(data);
-
-      // Visual feedback
-      element.style.outline = '3px solid #4CAF50';
-      
-      // Update info box
-      title.textContent = 'Element Selected!';
-      instructions.innerHTML = `<strong>Selector:</strong> ${selector}<br><strong>Text:</strong> ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`;
-      
-      // Auto-close after a short delay
-      setTimeout(cleanup, 1500);
-    }
-  }
-
-  // ======== Cleanup Function ========
-  function cleanup() {
-    overlay.remove();
-    infoBox.remove();
-    if (hoveredElement) {
-      hoveredElement.style.outline = '';
-    }
-    document.removeEventListener('keydown', handleEscape);
-  }
-
-  // ======== ESC Key Handler ========
-  function handleEscape(e) {
-    if (e.key === 'Escape') {
-      cleanup();
-    }
-  }
-
-  // ======== Attach Event Listeners ========
-  overlay.addEventListener('mousemove', handleMouseMove);
-  overlay.addEventListener('click', handleClick);
-  document.addEventListener('keydown', handleEscape);
-
-  // ======== Add to Page ========
-  document.body.appendChild(overlay);
-  document.body.appendChild(infoBox);
-
-  // Hide overlay temporarily to allow interaction with elements underneath
-  overlay.style.pointerEvents = 'none';
-  
-  // Re-enable pointer events on mouse move
-  document.addEventListener('mousemove', function enablePointer(e) {
-    overlay.style.pointerEvents = 'auto';
-    document.removeEventListener('mousemove', enablePointer);
-  });
+  // Clean up context message
+  delete window.scraperContextMessage;
 
 })();

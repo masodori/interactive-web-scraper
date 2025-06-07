@@ -187,8 +187,16 @@ class UnifiedCLI:
             # Step 7: Configure rate limiting
             rate_limiting = self._configure_rate_limiting()
             
-            # Step 8: Create template using unified scraper
-            template = self.interactive_scraper.create_template_from_interaction(url, scraping_type)
+            # Step 8: Create template using appropriate method
+            if engine == 'selenium' and scraping_type == ScrapingType.LIST_DETAIL:
+                # Use specialized Selenium template creator for list+detail
+                from .core.selenium_template_creator import SeleniumTemplateCreator
+                creator = SeleniumTemplateCreator(self.interactive_scraper)
+                template = creator.create_list_detail_template(url)
+            else:
+                # Use standard template creation
+                template = self.interactive_scraper.create_template_from_interaction(url, scraping_type)
+                
             if not template:
                 self.ux.print_error("Failed to create template")
                 return
@@ -364,6 +372,7 @@ class UnifiedCLI:
         print(f"\n{Fore.CYAN}🌐 Navigating to {url}...{Style.RESET_ALL}")
         
         try:
+            self.current_url = url  # Store for later use
             success = self.interactive_scraper.navigate_to(url)
             
             if success:
@@ -484,37 +493,71 @@ class UnifiedCLI:
         rules = template.list_page_rules
         
         # First, get the repeating item selector
-        print("\n🎯 First, let's identify the repeating pattern:")
-        print("What CSS selector represents each item in the list?")
-        print("\nCommon patterns:")
-        print("  • .person-card (for people directories)")
-        print("  • .article-item (for articles/blogs)")
-        print("  • .product-card (for products)")
-        print("  • li (for simple lists)")
-        print("  • .row (for table-like layouts)")
+        print("\n" + "="*50)
+        print("🎯 STEP 1: Identify List Items")
+        print("="*50)
+        print("\nWe need to identify what represents each item in the list.")
+        print("For example:")
+        print("  • Attorney cards on a law firm directory")
+        print("  • Product cards in an online store")
+        print("  • Article items in a blog")
         
-        manual_selector = input("\nEnter CSS selector for repeating items (or press Enter for interactive selection): ").strip()
+        print("\n" + Fore.YELLOW + "Options:" + Style.RESET_ALL)
+        print("  1. Click to select (recommended) - Visual selection")
+        print("  2. Enter CSS selector manually - If you know the selector")
         
-        if manual_selector:
-            rules.repeating_item_selector = manual_selector
-            self.ux.print_success(f"Using repeating item selector: {manual_selector}")
+        choice = input("\nChoose [1/2] (default: 1): ").strip() or "1"
+        
+        if choice == "2":
+            # Manual entry
+            print("\nCommon selectors:")
+            print("  • .person-card")
+            print("  • .attorney-item")
+            print("  • article")
+            print("  • li")
+            print("  • .row")
+            selector = input("\nEnter CSS selector: ").strip()
+            if selector:
+                rules.repeating_item_selector = selector
+                self.ux.print_success(f"Using selector: {selector}")
+            else:
+                return False
         else:
             # Interactive selection
+            print("\n" + Fore.CYAN + "Interactive Selection Mode" + Style.RESET_ALL)
+            print("1. An overlay will appear on the page")
+            print("2. Hover over items to see them highlighted in blue")
+            print("3. Click on any item from the list")
+            print("4. The tool will detect the pattern automatically")
+            
+            input("\n" + Fore.GREEN + "Press Enter when ready..." + Style.RESET_ALL)
+            
             if not self._interactive_selector_detection(rules):
                 return False
         
         # Configure fields within items
-        print(f"\n{Fore.CYAN}🔍 Configure Fields to Extract{Style.RESET_ALL}")
+        print("\n" + "="*50)
+        print("🔍 STEP 2: Select Fields to Extract")
+        print("="*50)
+        print("\nNow we need to select what data to extract from each item.")
         fields = self._configure_fields_interactive("list item")
         rules.fields = fields
         
         # Set profile link selector for list+detail
         if template.scraping_type == ScrapingType.LIST_DETAIL:
-            link_selector = input("\nEnter CSS selector for detail page links (e.g., 'a', '.read-more'): ").strip()
-            if link_selector:
-                rules.profile_link_selector = link_selector
+            print("\n" + "="*50)
+            print("🔗 STEP 3: Detail Page Links")
+            print("="*50)
+            print("\nFor list+detail scraping, we need the link to each detail page.")
+            print("This is typically an <a> tag within each list item.")
+            
+            link_selector = input("\nCSS selector for links (e.g., 'a', 'a.profile-link') [default: a]: ").strip() or "a"
+            rules.profile_link_selector = link_selector
         
         # Configure load strategy
+        print("\n" + "="*50)
+        print("📄 STEP 4: Page Loading Strategy")
+        print("="*50)
         load_strategy = self._configure_load_strategy()
         rules.load_strategy = LoadStrategyConfig(**load_strategy)
         
@@ -522,9 +565,14 @@ class UnifiedCLI:
 
     def _interactive_selector_detection(self, rules: TemplateRules) -> bool:
         """Use interactive selection to detect repeating items"""
-        print("\n1️⃣ Click on any item in the list to identify the pattern")
+        print("\n🎯 IMPORTANT: Click on ONE INDIVIDUAL ITEM from the list")
+        print("   Examples:")
+        print("   • One person card (not the whole grid)")
+        print("   • One product tile (not the container)")
+        print("   • One article item (not the list)")
+        print("\n⚠️  Make sure to click a specific item, not the container!")
         
-        if not self.scraper.inject_interactive_selector("Click on any list item"):
+        if not self.interactive_scraper.inject_interactive_selector("Click ONE item (e.g., one person card)"):
             self.ux.print_error("Failed to inject interactive selector")
             return False
         
@@ -532,12 +580,15 @@ class UnifiedCLI:
         selected_data = None
         for _ in range(30):  # 15 second timeout
             time.sleep(0.5)
-            data = self.scraper.get_selected_element_data()
+            data = self.interactive_scraper.get_selected_element_data()
             if data:
                 if data.get('done'):
                     break
                 selected_data = data
-                print(f"✅ Selected: {data.get('selector', 'Unknown')}")
+                print(f"\n📍 Selected element: {data.get('selector', 'Unknown')}")
+                selected_text = data.get('text', '')[:100]
+                if selected_text:
+                    print(f"   Text preview: '{selected_text}...'")
                 break
         
         if not selected_data:
@@ -547,6 +598,18 @@ class UnifiedCLI:
         # Process the selected selector
         item_selector = selected_data.get('selector', '')
         if item_selector:
+            # Check if this looks like a container (common patterns)
+            container_indicators = ['container', 'grid', 'list', 'wrapper', 'loading', 'results']
+            might_be_container = any(indicator in item_selector.lower() for indicator in container_indicators)
+            
+            if might_be_container:
+                print("\n⚠️  This might be a container, not an individual item!")
+                print("   Selected:", item_selector)
+                confirm = input("\nIs this correct? [y/N]: ").strip().lower()
+                if confirm != 'y':
+                    print("Please try again and select an individual item.")
+                    return False
+            
             # Try to generalize the selector
             parts = item_selector.split(' > ')
             if len(parts) > 1:
@@ -558,20 +621,29 @@ class UnifiedCLI:
                 general_item_selector = re.sub(r':nth[-‐]of[-‐]type\(\d+\)', '', last_part)
                 if not general_item_selector or general_item_selector.strip() == '':
                     general_item_selector = last_part.split(':')[0] if ':' in last_part else 'div'
-                    print(f"⚠️  Warning: Selector was too specific. Using generic '{general_item_selector}'")
+                    print(f"\n⚠️  Selector seems too generic: '{general_item_selector}'")
                     
-                    # Ask user for better selector
-                    better_selector = input(f"Enter a better repeating item selector (or press Enter to keep '{general_item_selector}'): ").strip()
-                    if better_selector:
-                        general_item_selector = better_selector
+                # Always ask for confirmation/improvement
+                print(f"\n📋 Generated repeating item selector: {general_item_selector}")
+                print("   This will be used to find ALL similar items")
+                better_selector = input("\nModify selector or press Enter to accept: ").strip()
+                if better_selector:
+                    general_item_selector = better_selector
                 
                 rules.container_selector = container_selector
                 rules.repeating_item_selector = general_item_selector
+                
+                # Store the full selector for making relative selectors later
+                self._last_item_selector = item_selector
+                self._generalized_item_selector = general_item_selector
             else:
                 rules.repeating_item_selector = item_selector
+                self._last_item_selector = item_selector
+                self._generalized_item_selector = item_selector
         
-        print(f"\n📦 Container: {getattr(rules, 'container_selector', None) or 'body'}")
-        print(f"📋 Repeating item selector: {rules.repeating_item_selector}")
+        print(f"\n✅ Configuration complete:")
+        print(f"   Container: {getattr(rules, 'container_selector', None) or 'body'}")
+        print(f"   Item selector: {rules.repeating_item_selector}")
         
         # Clean up selector overlay
         self._cleanup_interactive_selector()
@@ -582,70 +654,136 @@ class UnifiedCLI:
         """Configure fields using interactive selection"""
         fields = {}
         
-        print(f"\n💡 Click on different elements within each {context} to extract data")
+        print(f"\n💡 Now click on elements WITHIN a single {context} to extract data")
+        print("Click elements first, then I'll ask what to call them.")
+        print("Click 'Done' when finished selecting fields.")
         
-        common_fields = ["title", "link", "description", "date", "price", "author", "category"]
+        # Provide site-specific hints if we detect certain URLs
+        if hasattr(self, 'current_url') and self.current_url:
+            if 'gibsondunn.com/people' in self.current_url:
+                print("\n💡 For Gibson Dunn attorney cards, try clicking:")
+                print("   • Attorney name")
+                print("   • Title/position") 
+                print("   • Office location")
+                print("   • Practice areas")
+                print("   • Email/phone if visible")
         
-        for field_name in common_fields:
-            print(f"\n🔍 Select the {field_name} field (or click 'Done Selecting' to skip)")
+        print()
+        
+        field_count = 0
+        while True:
+            field_count += 1
             
-            if field_name == "title":
-                print("   💡 Hint: Click on the main heading/name")
-            elif field_name == "link":
-                print("   💡 Hint: Click on any clickable link")
-            elif field_name == "description":
-                print("   💡 Hint: Click on descriptive text/subtitle")
-            
-            if not self.scraper.inject_interactive_selector(f"Select {field_name} field"):
+            # Let user select an element
+            if not self.interactive_scraper.inject_interactive_selector(f"Click field #{field_count} or Done"):
                 break
             
             # Wait for selection
             field_data = None
-            for _ in range(30):  # 15 second timeout
+            for _ in range(60):  # 30 second timeout
                 time.sleep(0.5)
-                data = self.scraper.get_selected_element_data()
+                data = self.interactive_scraper.get_selected_element_data()
                 if data:
-                    if data.get('done'):
-                        break
                     field_data = data
                     break
             
-            if field_data and not field_data.get('done'):
-                selector = field_data.get('selector', '')
-                if selector:
-                    fields[field_name] = selector
-                    print(f"✅ {field_name}: {selector}")
-            
-            if field_data and field_data.get('done'):
+            if not field_data:
+                print("⚠️  No selection made")
                 break
-        
-        # Allow custom fields
-        while True:
-            custom_name = input("\n💡 Add custom field name (or press Enter to finish): ").strip()
-            if not custom_name:
-                break
-            
-            print(f"🔍 Select the {custom_name} field")
-            if self.scraper.inject_interactive_selector(f"Select {custom_name} field"):
-                # Wait for selection
-                field_data = None
-                for _ in range(30):
-                    time.sleep(0.5)
-                    data = self.scraper.get_selected_element_data()
-                    if data:
-                        field_data = data
-                        break
                 
-                if field_data:
-                    selector = field_data.get('selector', '')
-                    if selector:
-                        fields[custom_name] = selector
-                        print(f"✅ {custom_name}: {selector}")
+            if field_data.get('done') or field_data == 'DONE_SELECTING':
+                print("✅ Done selecting fields")
+                break
+            
+            # Get the selector
+            selector = field_data.get('selector', '')
+            if not selector:
+                continue
+            
+            # Make selector relative to the repeating item if possible
+            original_selector = selector
+            if hasattr(self, '_last_item_selector') and self._last_item_selector:
+                # Try to make it relative to the actual clicked item
+                relative_selector = self._make_selector_relative(selector, self._last_item_selector)
+                
+                # If we have a generalized selector, adjust for that too
+                if hasattr(self, '_generalized_item_selector'):
+                    # The relative selector should work from the generalized item
+                    selector = relative_selector
+                    print(f"📍 Selected element within item: {relative_selector}")
+                else:
+                    if relative_selector != selector:
+                        selector = relative_selector
+                        print(f"📍 Relative to item: {relative_selector}")
+                    else:
+                        print(f"📍 Selected: {selector}")
+            else:
+                print(f"📍 Selected: {selector}")
+            
+            # Show what was selected
+            selected_text = field_data.get('text', '')[:50]
+            if selected_text:
+                print(f"   Text: '{selected_text}...'")
+            
+            # Ask what to call this field
+            print("\nWhat is this field?")
+            print("Common options: name, title, email, phone, location, department, bio")
+            field_name = input("Field name (or press Enter to skip): ").strip()
+            
+            if field_name:
+                fields[field_name] = selector
+                print(f"✅ Saved as '{field_name}'")
+            else:
+                print("⚠️  Skipped this selection")
+            
+            print("-" * 40)
         
         # Clean up selector overlay
         self._cleanup_interactive_selector()
         
+        if not fields:
+            print("\n⚠️  No fields configured!")
+        else:
+            print(f"\n✅ Configured {len(fields)} fields:")
+            for name, sel in fields.items():
+                print(f"   • {name}: {sel}")
+        
         return fields
+    
+    def _make_selector_relative(self, field_selector: str, item_selector: str) -> str:
+        """Make a field selector relative to the repeating item selector"""
+        # If the field selector already looks relative, return as-is
+        if field_selector.startswith('.') or field_selector.startswith('#') or '>' not in field_selector:
+            return field_selector
+        
+        # Split both selectors into parts
+        field_parts = [p.strip() for p in field_selector.split('>')]
+        item_parts = [p.strip() for p in item_selector.split('>')]
+        
+        # Find where they diverge
+        common_length = 0
+        for i in range(min(len(field_parts), len(item_parts))):
+            if field_parts[i] == item_parts[i]:
+                common_length = i + 1
+            else:
+                break
+        
+        # If the field is within the item, make it relative
+        if common_length >= len(item_parts) - 1:
+            # Get the parts after the item selector
+            relative_parts = field_parts[common_length:]
+            if relative_parts:
+                return ' > '.join(relative_parts)
+        
+        # If we can't make it relative, try a simpler approach
+        # Just get the last meaningful part
+        last_part = field_parts[-1] if field_parts else field_selector
+        
+        # Clean up nth-of-type if it's there
+        import re
+        last_part = re.sub(r':nth-of-type\(\d+\)', '', last_part)
+        
+        return last_part.strip() or field_selector
 
     def _configure_list_rules_manual(self, template: ScrapingTemplate) -> bool:
         """Configure list rules manually for requests engine"""
@@ -901,29 +1039,8 @@ class UnifiedCLI:
             return
         
         try:
-            cleanup_js = """
-            // Remove the overlay
-            const overlay = document.getElementById('scrapeOverlay');
-            if (overlay) {
-                overlay.remove();
-            }
-            
-            // Remove any highlights
-            document.querySelectorAll('[style*="outline"]').forEach(el => {
-                el.style.outline = '';
-            });
-            
-            // Remove hidden input
-            const hiddenInput = document.getElementById('selected_element_data');
-            if (hiddenInput) {
-                hiddenInput.remove();
-            }
-            """
-            
-            if self.current_engine == 'selenium':
-                self.scraper.driver.execute_script(cleanup_js)
-            else:  # playwright
-                asyncio.run(self.scraper.page.evaluate(cleanup_js))
+            # Use the unified scraper's cleanup method
+            self.interactive_scraper.cleanup_interactive_selector()
                 
         except Exception as e:
             logging.error(f"Failed to cleanup interactive selector: {e}")

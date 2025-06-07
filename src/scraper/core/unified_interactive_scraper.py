@@ -232,7 +232,18 @@ class UnifiedInteractiveScraper:
         
         try:
             if self.engine == 'selenium':
-                return self.scraper.get_selected_element_data()
+                data = self.scraper.get_selected_element_data()
+                
+                # Clear the selection after reading to prevent auto-fill
+                if data and not data.get('done'):
+                    self.scraper.driver.execute_script("""
+                        const input = document.getElementById('selected_element_data');
+                        if (input) {
+                            input.value = '';
+                        }
+                    """)
+                
+                return data
             else:  # playwright
                 # Implement for Playwright
                 return None
@@ -431,12 +442,8 @@ class UnifiedInteractiveScraper:
     def create_template_from_interaction(self, url: str, scraping_type: ScrapingType) -> Optional[ScrapingTemplate]:
         """Create a template using interactive element selection"""
         try:
-            # Navigate to URL
-            if not self.navigate_to(url):
-                return None
-            
-            # Handle cookies
-            self.handle_cookies()
+            # Don't navigate or handle cookies - this should be done by the caller
+            # to avoid duplicate navigation which clears JavaScript injection
             
             # Create base template
             site_info = SiteInfo(url=url)
