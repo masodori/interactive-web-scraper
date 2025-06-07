@@ -1,0 +1,25 @@
+Project File Structure
+======================
+
+The main directories and files are organized as follows:
+
+```
+interactive-web-scraper/
+├── README.md            # Project documentation
+├── requirements.txt     # Python dependencies
+├── setup.py             # Package setup
+├── src/                 # Library source code
+│   └── scraper/
+│       ├── cli.py       # Command line interface
+│       ├── core/        # Core scraper classes
+│       ├── extractors/  # Extraction utilities
+│       ├── exporters/   # Export handlers
+│       ├── handlers/    # Special handlers
+│       ├── models/      # Data models
+│       ├── utils/       # Helper utilities
+│       └── config/      # Configuration settings
+├── examples/            # Example scripts
+└── assets/              # Static assets (JavaScript, etc.)
+```
+
+See `README.md` for more details.

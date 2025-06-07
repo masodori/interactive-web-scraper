@@ -79,6 +79,22 @@ result = scraper.apply_template(
 scraper.close()
 ```
 
+## General Usage
+
+Run the scraper's command line interface by calling the package as a module:
+
+```bash
+python -m scraper <command> [options]
+```
+
+Common commands include:
+- `create` - interactively build a scraping template.
+- `apply` - run a saved template and export results.
+- `batch` - process templates in a directory.
+- `extract` - quickly scrape specific elements.
+
+Run `python -m scraper --help` for a full list of options.
+
 ## Project Structure
 
 - `src/scraper/`: Main package directory
@@ -89,6 +105,7 @@ scraper.close()
   - `models/`: Data models and enums
   - `utils/`: Utility functions
   - `config/`: Configuration settings
+A simplified directory tree is also available in `file_structure.txt`.
 
 ## Configuration
 
