@@ -40,7 +40,7 @@ from ..extractors.advanced_selectors import AdvancedSelectors
 class EnhancedInteractiveScraper(BaseScraper):
     """Enhanced interactive scraper with advanced features"""
     
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = False, engine: str = "selenium"):
         """Initialize enhanced scraper"""
         super().__init__(headless=headless)
         self.pattern_extractor = PatternExtractor()
@@ -48,6 +48,7 @@ class EnhancedInteractiveScraper(BaseScraper):
         self.prompt_formatter = PromptFormatter()
         self._template_creation_attempts = 0
         self._max_creation_attempts = 3
+        self.engine = engine
         
     def create_template(self):
         """Enhanced template creation with all new features"""
@@ -160,7 +161,7 @@ class EnhancedInteractiveScraper(BaseScraper):
             # Step 9: Configure pattern extraction
             pattern_config = self._configure_pattern_extraction()
             if pattern_config:
-                template_dict['detail_page_rules']['extraction_patterns'] = pattern_config
+                template_dict['extraction_patterns'] = pattern_config
             
             # Step 10: Configure fallback strategies
             fallback_config = self._configure_fallback_strategies()
@@ -530,9 +531,9 @@ class EnhancedInteractiveScraper(BaseScraper):
         if template.get('detail_page_rules'):
             rules = template['detail_page_rules']
             print(f"  - Detail fields: {len(rules.get('fields', {}))}")
-            
-            if rules.get('extraction_patterns'):
-                print(f"  - Pattern extraction: {len(rules['extraction_patterns'])} patterns enabled")
+        
+        if template.get('extraction_patterns'):
+            print(f"  - Pattern extraction: {len(template['extraction_patterns'])} patterns enabled")
         
         if template.get('rate_limiting', {}).get('enabled'):
             print(f"  - Rate limiting: {template['rate_limiting']['preset']}")
@@ -668,3 +669,198 @@ class EnhancedInteractiveScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Navigation error: {e}")
             return False
+    
+    def _define_list_rules_safe(self, template: ScrapingTemplate) -> bool:
+        """Define list rules with interactive element selection"""
+        rules = template.list_page_rules
+        if not rules:
+            return False
+            
+        # Initialize fields if not already present
+        if not hasattr(rules, 'fields') or rules.fields is None:
+            rules.fields = {}
+            
+        print("\n🎯 Interactive List Item Selection")
+        print("=" * 40)
+        
+        # First, select the list container
+        print("\n1️⃣ Click on any item in the list (this helps identify the container)")
+        
+        if not self.inject_interactive_selector("Click on any list item"):
+            print("❌ Failed to inject interactive selector")
+            print("Falling back to manual configuration...")
+            self._define_list_rules_manual(template)
+            return True
+            
+        # Wait for user to select an element
+        selected_data = None
+        while True:
+            time.sleep(0.5)
+            data = self.get_selected_element_data()
+            if data:
+                if data.get('done'):
+                    break
+                selected_data = data
+                print(f"✅ Selected: {data.get('selector', 'Unknown')}")
+                break
+        
+        if not selected_data:
+            print("❌ No element selected")
+            self._define_list_rules_manual(template)
+            return True
+            
+        # Extract container selector
+        item_selector = selected_data.get('selector', '')
+        if item_selector:
+            # Try to generalize the selector to find the container
+            parts = item_selector.split(' > ')
+            if len(parts) > 1:
+                # Remove the last part to get potential container
+                container_selector = ' > '.join(parts[:-1])
+                rules.container_selector = container_selector
+                rules.repeating_item_selector = parts[-1]
+            else:
+                rules.repeating_item_selector = item_selector
+                
+        print(f"\n📦 Container: {rules.container_selector or 'body'}")
+        print(f"📋 Item selector: {rules.repeating_item_selector}")
+        
+        # Now select fields within items
+        print("\n2️⃣ Now we'll select fields within the list items")
+        print("Click on different fields you want to extract (title, link, etc.)")
+        
+        fields = {}
+        field_names = ["title", "link", "description", "date", "price", "custom"]
+        
+        for field_name in field_names:
+            print(f"\n🔍 Select the {field_name} field (or click 'Done Selecting' to skip)")
+            
+            if not self.inject_interactive_selector(f"Select {field_name} field"):
+                break
+                
+            # Wait for selection
+            field_data = None
+            while True:
+                time.sleep(0.5)
+                data = self.get_selected_element_data()
+                if data:
+                    if data.get('done'):
+                        break
+                    field_data = data
+                    break
+                    
+            if field_data and not field_data.get('done'):
+                selector = field_data.get('selector', '')
+                if selector:
+                    # Make selector relative to item if possible
+                    if item_selector and selector.startswith(item_selector):
+                        relative_selector = selector[len(item_selector):].strip()
+                        if relative_selector.startswith(' > '):
+                            relative_selector = relative_selector[3:]
+                        # Only use relative selector if it's not empty
+                        if relative_selector:
+                            fields[field_name] = relative_selector
+                        else:
+                            # If relative selector is empty, use the full selector
+                            fields[field_name] = selector
+                    else:
+                        fields[field_name] = selector
+                        
+                    print(f"✅ {field_name}: {fields[field_name]}")
+                    
+                    # If it's a link field, also set profile link selector
+                    if field_name == "link" and template.scraping_type == ScrapingType.LIST_DETAIL:
+                        rules.profile_link_selector = fields[field_name]
+            
+            # Ask if user wants to add more fields
+            if field_data and field_data.get('done'):
+                break
+                
+        rules.fields = fields
+        
+        print("\n✅ List rules configured successfully!")
+        return True
+    
+    def _define_detail_rules_safe(self, template: ScrapingTemplate) -> bool:
+        """Define detail rules with interactive element selection"""
+        rules = template.detail_page_rules
+        if not rules:
+            return False
+            
+        # Initialize fields if not already present
+        if not hasattr(rules, 'fields') or rules.fields is None:
+            rules.fields = {}
+            
+        print("\n🎯 Interactive Detail Page Selection")
+        print("=" * 40)
+        
+        # Navigate to a detail page if needed
+        if template.scraping_type == ScrapingType.LIST_DETAIL:
+            print("\n📄 Please navigate to a detail/article page first")
+            print("(You can click on any link from the list page)")
+            input("Press Enter when you're on a detail page...")
+            
+        print("\n🔍 Now select the fields you want to extract from this page")
+        
+        fields = {}
+        common_fields = ["title", "content", "author", "date", "category", "tags", "image"]
+        
+        for field_name in common_fields:
+            print(f"\n📌 Select the {field_name} (or click 'Done Selecting' to skip)")
+            
+            if not self.inject_interactive_selector(f"Select {field_name}"):
+                break
+                
+            # Wait for selection
+            field_data = None
+            while True:
+                time.sleep(0.5)
+                data = self.get_selected_element_data()
+                if data:
+                    if data.get('done'):
+                        break
+                    field_data = data
+                    break
+                    
+            if field_data and not field_data.get('done'):
+                selector = field_data.get('selector', '')
+                if selector:
+                    fields[field_name] = selector
+                    print(f"✅ {field_name}: {selector}")
+                    
+            # Ask if done
+            if field_data and field_data.get('done'):
+                break
+                
+        # Allow custom fields
+        while True:
+            custom_name = input("\n💡 Add custom field name (or press Enter to finish): ").strip()
+            if not custom_name:
+                break
+                
+            print(f"\n📌 Select the {custom_name} element")
+            
+            if not self.inject_interactive_selector(f"Select {custom_name}"):
+                break
+                
+            # Wait for selection
+            custom_data = None
+            while True:
+                time.sleep(0.5)
+                data = self.get_selected_element_data()
+                if data:
+                    custom_data = data
+                    break
+                    
+            if custom_data and not custom_data.get('done'):
+                selector = custom_data.get('selector', '')
+                if selector:
+                    fields[custom_name] = selector
+                    print(f"✅ {custom_name}: {selector}")
+                    
+        rules.fields = fields
+        
+        print("\n✅ Detail page rules configured successfully!")
+        print(f"📊 Total fields selected: {len(fields)}")
+        
+        return True

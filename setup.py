@@ -16,7 +16,7 @@ requirements = [req.strip() for req in requirements if req.strip() and not req.s
 
 setup(
     name="interactive-web-scraper",
-    version="1.0.0",
+    version="2.0.0",
     author="Your Name",
     author_email="your.email@example.com",
     description="A modular, extensible web scraper with interactive template creation",
@@ -62,7 +62,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "scraper=scraper.cli:main",
+            "scraper=scraper.improved_cli:main",
+            "scraper-improved=scraper.improved_cli:main",
         ],
     },
     include_package_data=True,

@@ -11,7 +11,11 @@ from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
 
 from .base_scraper import BaseScraper
-from .playwright_sync_wrapper import PlaywrightSyncWrapper, PLAYWRIGHT_AVAILABLE
+try:
+    import playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 from ..config import Config
 
 
@@ -46,8 +50,9 @@ class MultiEngineScraper(BaseScraper):
                     "Playwright is not installed. Install with: "
                     "pip install playwright && playwright install"
                 )
-            # Initialize Playwright wrapper
-            self.driver = PlaywrightSyncWrapper(headless=headless)
+            # Initialize Playwright using separate scraper
+            from .playwright_scraper import PlaywrightScraper
+            self.driver = PlaywrightScraper(headless=headless)
             self.wait = None  # Playwright has built-in waiting
             self.cookie_handler = None  # TODO: Implement for Playwright
         elif self.engine == "requests":

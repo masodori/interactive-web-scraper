@@ -5,7 +5,7 @@ A modular, extensible web scraping framework with cookie handling,
 template-based scraping, and multiple export formats.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Your Name"
 __email__ = "your.email@example.com"
 
@@ -21,6 +21,9 @@ from .models.data_models import (
     ScrapingTemplate
 )
 
+# Import improved CLI
+from .improved_cli import main as improved_cli_main
+
 # Make key classes available at package level
 __all__ = [
     'BaseScraper',
@@ -30,5 +33,6 @@ __all__ = [
     'LoadStrategy',
     'ScrapedItem',
     'ScrapeResult',
-    'ScrapingTemplate'
+    'ScrapingTemplate',
+    'improved_cli_main'
 ]

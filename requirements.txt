@@ -11,6 +11,7 @@ openpyxl>=3.1.0  # For Excel export
 
 # Utilities
 python-dateutil>=2.8.2
+colorama>=0.4.6  # For colored terminal output
 
 # New dependencies for improvements
 playwright>=1.40.0  # For Playwright engine support
