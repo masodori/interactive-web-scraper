@@ -248,53 +248,103 @@ class TemplateScraper:
     # --- Selenium Engine Methods ---
 
     def _scrape_list_page_selenium(self, template: ScrapingTemplate) -> List[ScrapedItem]:
-        """Handles scraping for list_only and list_detail types with Selenium."""
+        """Handles scraping for list_only and list_detail types with Selenium.
+        
+        This method has been optimized to extract items incrementally while the
+        next set of results is loading. This reduces idle wait time when dealing
+        with pagination or "load more" buttons.
+        """
+
         list_rules = template.list_page_rules
         if not list_rules or not list_rules.repeating_item_selector:
             raise ValueError("Template for list scraping is missing 'repeating_item_selector'.")
 
-        self.load_more_handler.execute_loading(
-            list_rules.load_strategy,
-            item_selector=list_rules.repeating_item_selector
-        )
+        strategy = list_rules.load_strategy
+        item_selector = list_rules.repeating_item_selector
 
-        item_elements = self.scraper.driver.find_elements(By.CSS_SELECTOR, list_rules.repeating_item_selector)
-        self.logger.info(f"Found {len(item_elements)} total items after loading all content")
-        
-        scraped_items = []
-        for i, element in enumerate(item_elements):
-            try:
-                item_data = {}
-                for field_name, selector in list_rules.fields.items():
-                    value = self.extractor.extract_text(selector, parent=element)
-                    if value:
-                        item_data[field_name] = value
+        scraped_items: List[ScrapedItem] = []
+        processed_count = 0
 
-                detail_url = None
-                if template.scraping_type == ScrapingType.LIST_DETAIL and list_rules.profile_link_selector:
-                    link_data = self.extractor.extract_link(list_rules.profile_link_selector, parent=element)
-                    if link_data and link_data.get("href"):
-                        detail_url = link_data["href"]
+        def process_elements(elements: List[Any]):
+            nonlocal processed_count
+            for element in elements:
+                try:
+                    item_data = {}
+                    for field_name, selector in list_rules.fields.items():
+                        value = self.extractor.extract_text(selector, parent=element)
+                        if value:
+                            item_data[field_name] = value
 
-                if item_data or detail_url:
+                    detail_url = None
+                    if template.scraping_type == ScrapingType.LIST_DETAIL and list_rules.profile_link_selector:
+                        link_data = self.extractor.extract_link(list_rules.profile_link_selector, parent=element)
+                        if link_data and link_data.get("href"):
+                            detail_url = link_data["href"]
+
+                    if item_data or detail_url:
+                        scraped_items.append(ScrapedItem(
+                            url=self.scraper.get_current_url(),
+                            timestamp=datetime.now().isoformat(),
+                            data=item_data,
+                            detail_url=detail_url
+                        ))
+                except Exception as e:
+                    self.logger.error(f"Error processing item {processed_count + 1}: {e}")
                     scraped_items.append(ScrapedItem(
                         url=self.scraper.get_current_url(),
                         timestamp=datetime.now().isoformat(),
-                        data=item_data,
-                        detail_url=detail_url
+                        data={},
+                        errors=[str(e)]
                     ))
-            except Exception as e:
-                self.logger.error(f"Error processing item {i+1}: {e}")
-                scraped_items.append(ScrapedItem(
-                    url=self.scraper.get_current_url(),
-                    timestamp=datetime.now().isoformat(),
-                    data={},
-                    errors=[str(e)]
-                ))
-        
+                processed_count += 1
+
+        pause_time = strategy.pause_time
+
+        while True:
+            current_elements = self.scraper.driver.find_elements(By.CSS_SELECTOR, item_selector)
+            new_elements = current_elements[processed_count:]
+            if new_elements:
+                process_elements(new_elements)
+
+            # Determine if another page should be loaded
+            if strategy.type == LoadStrategy.BUTTON and strategy.button_selector:
+                try:
+                    button = self.scraper.driver.find_element(By.CSS_SELECTOR, strategy.button_selector)
+                    if not (button.is_displayed() and button.is_enabled()):
+                        break
+                    self.scraper.driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", button)
+                    time.sleep(0.5)
+                    self.scraper.driver.execute_script("arguments[0].click();", button)
+                    time.sleep(pause_time)
+                    continue
+                except (NoSuchElementException, StaleElementReferenceException, ElementNotInteractableException):
+                    break
+
+            elif strategy.type == LoadStrategy.PAGINATION and strategy.pagination_next_selector:
+                try:
+                    next_button = self.scraper.driver.find_element(By.CSS_SELECTOR, strategy.pagination_next_selector)
+                    if not (next_button.is_displayed() and next_button.is_enabled()):
+                        break
+                    self.scraper.driver.execute_script("arguments[0].click();", next_button)
+                    time.sleep(pause_time)
+                    continue
+                except (NoSuchElementException, StaleElementReferenceException):
+                    break
+
+            else:
+                # For scrolling or no strategy, load once and exit
+                if strategy.type in (LoadStrategy.SCROLL, LoadStrategy.AUTO):
+                    self.load_more_handler.execute_loading(strategy, item_selector=item_selector)
+                break
+
+        # Process any items that loaded after the final click
+        final_elements = self.scraper.driver.find_elements(By.CSS_SELECTOR, item_selector)
+        if len(final_elements) > processed_count:
+            process_elements(final_elements[processed_count:])
+
         if template.scraping_type == ScrapingType.LIST_DETAIL:
             self._scrape_detail_pages_selenium(scraped_items, template.detail_page_rules)
-            
+
         return scraped_items
 
     def _scrape_detail_pages_selenium(self, items: List[ScrapedItem], detail_rules):
