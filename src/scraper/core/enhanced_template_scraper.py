@@ -34,6 +34,9 @@ from .requests_scraper import RequestScraper
 from .playwright_scraper import PlaywrightScraper, PlaywrightExtractor
 from .template_scraper import TemplateScraper
 
+# Import exporters
+from ..exporters import JsonExporter, CsvExporter, ExcelExporter, HtmlExporter
+
 
 class EnhancedTemplateScraper(TemplateScraper):
     """Enhanced template scraper with all new features"""
@@ -48,8 +51,23 @@ class EnhancedTemplateScraper(TemplateScraper):
             headless: Run browser in headless mode
             rate_limit_preset: Rate limiting preset name
         """
-        # Initialize base class
-        super().__init__(engine, headless)
+        # For playwright, initialize manually to bypass parent's engine validation
+        if engine == 'playwright':
+            self.logger = logging.getLogger(f'{__name__}.EnhancedTemplateScraper')
+            self.config = Config()
+            self.engine = engine
+            self.headless = headless
+            
+            # Initialize exporters
+            self.exporters = {
+                ExportFormat.JSON: JsonExporter(),
+                ExportFormat.CSV: CsvExporter(),
+                ExportFormat.EXCEL: ExcelExporter(),
+                ExportFormat.HTML: HtmlExporter(),
+            }
+        else:
+            # Initialize base class for selenium/requests
+            super().__init__(engine, headless)
         
         # Initialize rate limiter
         rate_config = RATE_LIMIT_PRESETS.get(rate_limit_preset)

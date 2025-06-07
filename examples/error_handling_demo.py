@@ -9,7 +9,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.scraper.core import InteractiveScraper
+from src.scraper.core import EnhancedInteractiveScraper
 from src.scraper.utils.input_validators import (
     get_validated_url,
     get_validated_field_name,

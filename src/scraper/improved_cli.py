@@ -350,7 +350,7 @@ class ImprovedCLI:
         formats = {
             '1': ('JSON', ExportFormat.JSON),
             '2': ('CSV', ExportFormat.CSV),
-            '3': ('Excel', ExportFormat.XLSX),
+            '3': ('Excel', ExportFormat.EXCEL),
             '4': ('HTML', ExportFormat.HTML)
         }
         

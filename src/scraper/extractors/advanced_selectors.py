@@ -47,13 +47,14 @@ class AdvancedSelectors:
         
         # Initialize AI model if available
         self.ai_model = None
-        if AI_AVAILABLE:
+        self.ai_available = AI_AVAILABLE
+        if self.ai_available:
             try:
                 self.ai_model = SentenceTransformer('all-MiniLM-L6-v2')
                 self.logger.info("AI model loaded for semantic matching")
             except Exception as e:
                 self.logger.warning(f"Failed to load AI model: {e}")
-                AI_AVAILABLE = False
+                self.ai_available = False
     
     def find_by_text_content(self, text: str, tag: str = "*", 
                            fuzzy: bool = True, min_similarity: float = 0.8) -> List[WebElement]:
@@ -246,7 +247,7 @@ class AdvancedSelectors:
         Returns:
             List of semantically similar elements
         """
-        if not AI_AVAILABLE or not self.ai_model:
+        if not self.ai_available or not self.ai_model:
             self.logger.warning("AI model not available for semantic matching")
             return []
         
@@ -507,7 +508,7 @@ class AdvancedSelectors:
     
     def _cosine_similarity(self, vec1, vec2) -> float:
         """Calculate cosine similarity between two vectors"""
-        if AI_AVAILABLE:
+        if self.ai_available:
             dot_product = np.dot(vec1, vec2)
             norm_a = np.linalg.norm(vec1)
             norm_b = np.linalg.norm(vec2)

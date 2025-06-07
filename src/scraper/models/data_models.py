@@ -243,10 +243,14 @@ class ScrapingTemplate:
     field_mappings: Dict[str, str] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     version: str = "1.0"
+    # New v2.1 fields
+    rate_limiting: Optional[Dict[str, Any]] = None
+    extraction_patterns: Optional[Dict[str, Any]] = None
+    fallback_strategies: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
-        return {
+        result = {
             "name": self.name,
             "engine": self.engine,
             "version": self.version,
@@ -261,6 +265,16 @@ class ScrapingTemplate:
             ),
             "field_mappings": self.field_mappings,
         }
+        
+        # Add v2.1 fields if they exist
+        if self.rate_limiting is not None:
+            result["rate_limiting"] = self.rate_limiting
+        if self.extraction_patterns is not None:
+            result["extraction_patterns"] = self.extraction_patterns
+        if self.fallback_strategies is not None:
+            result["fallback_strategies"] = self.fallback_strategies
+            
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScrapingTemplate":
@@ -270,21 +284,31 @@ class ScrapingTemplate:
 
         list_rules = None
         if data.get("list_page_rules"):
-            rules_data = data["list_page_rules"]
-            if "load_strategy" in rules_data:
-                rules_data["load_strategy"] = LoadStrategyConfig.from_dict(
-                    rules_data["load_strategy"]
+            rules_data = data["list_page_rules"].copy()
+            # Filter out fields that TemplateRules doesn't support
+            filtered_data = {
+                k: v for k, v in rules_data.items() 
+                if k in ['fields', 'repeating_item_selector', 'profile_link_selector', 'load_strategy']
+            }
+            if "load_strategy" in filtered_data:
+                filtered_data["load_strategy"] = LoadStrategyConfig.from_dict(
+                    filtered_data["load_strategy"]
                 )
-            list_rules = TemplateRules(**rules_data)
+            list_rules = TemplateRules(**filtered_data)
 
         detail_rules = None
         if data.get("detail_page_rules"):
-            rules_data = data["detail_page_rules"]
-            if "load_strategy" in rules_data:
-                rules_data["load_strategy"] = LoadStrategyConfig.from_dict(
-                    rules_data["load_strategy"]
+            rules_data = data["detail_page_rules"].copy()
+            # Filter out fields that TemplateRules doesn't support
+            filtered_data = {
+                k: v for k, v in rules_data.items() 
+                if k in ['fields', 'repeating_item_selector', 'profile_link_selector', 'load_strategy']
+            }
+            if "load_strategy" in filtered_data:
+                filtered_data["load_strategy"] = LoadStrategyConfig.from_dict(
+                    filtered_data["load_strategy"]
                 )
-            detail_rules = TemplateRules(**rules_data)
+            detail_rules = TemplateRules(**filtered_data)
 
         return cls(
             name=data.get("name", "unnamed"),
@@ -296,6 +320,10 @@ class ScrapingTemplate:
             field_mappings=data.get("field_mappings", {}),
             created_at=data.get("created_at", datetime.now().isoformat()),
             version=data.get("version", "1.0"),
+            # v2.1 fields
+            rate_limiting=data.get("rate_limiting"),
+            extraction_patterns=data.get("extraction_patterns"),
+            fallback_strategies=data.get("fallback_strategies"),
         )
 
     def save(self, filepath: Union[str, Path]):
