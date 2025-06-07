@@ -41,62 +41,51 @@ from ..exporters import JsonExporter, CsvExporter, ExcelExporter, HtmlExporter
 class EnhancedTemplateScraper:
     """Enhanced template scraper with all new features"""
     
-    def __init__(self, engine: str = 'selenium', headless: bool = True, 
+    def __init__(self, engine: str = 'selenium', headless: bool = True,
                  rate_limit_preset: str = 'respectful_bot'):
         """
         Initialize enhanced scraper
-        
+
         Args:
             engine: Scraping engine ('selenium', 'requests', 'playwright')
             headless: Run browser in headless mode
             rate_limit_preset: Rate limiting preset name
         """
-        # For playwright, initialize manually to bypass parent's engine validation
-        if engine == 'playwright':
-            self.logger = logging.getLogger(f'{__name__}.EnhancedTemplateScraper')
-            self.config = Config()
-            self.engine = engine
-            self.headless = headless
-            
-            # Initialize exporters
-            self.exporters = {
-                ExportFormat.JSON: JsonExporter(),
-                ExportFormat.CSV: CsvExporter(),
-                ExportFormat.EXCEL: ExcelExporter(),
-                ExportFormat.HTML: HtmlExporter(),
-            }
+        self.logger = logging.getLogger(f'{__name__}.EnhancedTemplateScraper')
+        self.config = Config()
+        self.engine = engine
+        self.headless = headless
+        self.scraper = None  # Initialize attributes to None
+        self.extractor = None
+        self.playwright_scraper = None
+
+        # --- Corrected Engine Initialization ---
+        self.logger.info(f"Initializing scraper with engine: '{self.engine}'")
+        if self.engine == 'selenium':
+            self.scraper = BaseScraper(headless=self.headless)
+            self.extractor = EnhancedElementExtractor(self.scraper.driver)
+        elif self.engine == 'requests':
+            self.scraper = RequestScraper(self.config)
+            # For requests, the extractor is created later with page content
+        elif self.engine == 'playwright':
+            # Playwright's async initialization is handled in `apply_template`
+            pass
         else:
-            # Initialize without super() call as we don't inherit from a base class
-            self.logger = logging.getLogger(f'{__name__}.EnhancedTemplateScraper')
-            self.config = Config()
-            self.engine = engine
-            self.headless = headless
-            
-            # Initialize exporters
-            self.exporters = {
-                ExportFormat.JSON: JsonExporter(),
-                ExportFormat.CSV: CsvExporter(),
-                ExportFormat.EXCEL: ExcelExporter(),
-                ExportFormat.HTML: HtmlExporter(),
-            }
-        
-        # Initialize rate limiter
+            raise ValueError(f"Unsupported engine: {self.engine}")
+
+        # Initialize common components
+        self.exporters = {
+            ExportFormat.JSON: JsonExporter(),
+            ExportFormat.CSV: CsvExporter(),
+            ExportFormat.EXCEL: ExcelExporter(),
+            ExportFormat.HTML: HtmlExporter(),
+        }
         rate_config = RATE_LIMIT_PRESETS.get(rate_limit_preset)
         self.rate_limiter = DomainRateLimiter(rate_config)
-        
-        # Initialize pattern extractor
         self.pattern_extractor = PatternExtractor()
-        
-        # Initialize migration manager
         self.migration_manager = TemplateMigrationManager()
-        
-        # Override extractors with enhanced versions
-        if self.engine == 'selenium':
-            self.extractor = EnhancedElementExtractor(self.scraper.driver)
-        elif self.engine == 'playwright':
-            self._init_playwright()
-        
-        self.logger.info(f"Enhanced scraper initialized with {engine} engine")
+
+        self.logger.info(f"Enhanced scraper configured for '{engine}' engine")                 
     
     def _init_playwright(self):
         """Initialize Playwright components"""

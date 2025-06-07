@@ -1134,17 +1134,24 @@ class UnifiedCLI:
         """Run a template and export results"""
         try:
             self.ux.print_success("Loading template - Done!")
-            
-            # Create enhanced template scraper
-            scraper = EnhancedTemplateScraper()
-            
+
+            # Load template data to determine the engine
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template_data = json.load(f)
+            engine = template_data.get('engine', 'selenium')  # Default to selenium
+            self.ux.print_info(f"Template requires '{engine}' engine.")
+
+            # Create enhanced template scraper with the correct engine
+            # This now passes the engine specified in the template file
+            scraper = EnhancedTemplateScraper(engine=engine)
+
             # Apply template
-            print("ℹ️  Applying template...")
+            self.ux.print_info("Applying template...")
             result = scraper.apply_template(template_path, export_formats)
-            
+
             # Display results
             self._display_scraping_results(result)
-            
+
             scraper.close()
             
         except Exception as e:
