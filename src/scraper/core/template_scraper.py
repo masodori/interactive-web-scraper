@@ -23,15 +23,17 @@ from ..extractors.element_extractor import ElementExtractor
 from ..extractors.requests_extractor import RequestExtractor
 from ..extractors.table_extractor import TableExtractor
 
-# Model and Handler imports
+# Model imports - Config is imported from config module, not data_models
 from ..models import (
     ScrapingTemplate,
     ScrapeResult,
     ScrapedItem,
     ExportFormat,
-    ScrapingType,
-    Config
+    ScrapingType
 )
+from ..config import Config  # This is the correct import location
+
+# Handler imports
 from ..handlers import LoadMoreHandler, PaginationHandler, CookieHandler
 from ..exporters import JsonExporter, CsvExporter, ExcelExporter, HtmlExporter
 
