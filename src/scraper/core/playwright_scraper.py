@@ -86,9 +86,18 @@ class PlaywrightScraper:
         self.logger.info("🖥️  Creating browser context with viewport 1920x1080...")
         context = await self.browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            # Add network debugging
+            extra_http_headers={'Accept-Language': 'en-US,en;q=0.9'}
         )
         self.logger.info("✅ Browser context created")
+        
+        # Enable request/response logging
+        self.logger.info("🔧 Setting up network debugging...")
+        context.on("request", lambda request: self.logger.debug(f"📤 Request: {request.method} {request.url}"))
+        context.on("response", lambda response: self.logger.debug(f"📥 Response: {response.status} {response.url}"))
+        context.on("requestfailed", lambda request: self.logger.warning(f"❌ Request failed: {request.url} - {request.failure}"))
+        self.logger.info("✅ Network debugging enabled")
         
         # Create page
         self.logger.info("📄 Creating new page...")
@@ -104,7 +113,7 @@ class PlaywrightScraper:
     
     async def navigate_to(self, url: str, wait_until: str = "networkidle") -> bool:
         """
-        Navigate to URL with Playwright
+        Navigate to URL with Playwright with fallback strategies
         
         Args:
             url: URL to navigate to
@@ -113,25 +122,209 @@ class PlaywrightScraper:
         Returns:
             True if successful
         """
+        self.logger.info(f"🌐 Navigating to: {url}")
+        self.logger.info(f"⏳ Primary wait condition: {wait_until}")
+        
+        # Define fallback strategies in order of preference
+        wait_strategies = [wait_until, "domcontentloaded", "load"]
+        timeout_ms = 15000  # 15 seconds per attempt (more lenient)
+        
+        for i, strategy in enumerate(wait_strategies):
+            try:
+                if i > 0:
+                    self.logger.warning(f"🔄 Trying fallback strategy #{i}: {strategy}")
+                
+                self.logger.info(f"⏱️  Attempting navigation with {strategy} (timeout: {timeout_ms/1000}s)")
+                
+                await self.page.goto(url, wait_until=strategy, timeout=timeout_ms)
+                self.current_url = url
+                
+                # Get page title for confirmation
+                title = await self.page.title()
+                self.logger.info(f"✅ Successfully navigated to: {url}")
+                self.logger.info(f"📄 Page title: {title}")
+                self.logger.info(f"🎯 Wait strategy that worked: {strategy}")
+                
+                return True
+                
+            except PlaywrightTimeout:
+                self.logger.warning(f"⏰ Timeout with {strategy} strategy (waited {timeout_ms/1000}s)")
+                if i == len(wait_strategies) - 1:
+                    self.logger.error(f"❌ All navigation strategies failed for {url}")
+                    # Try one final attempt with no wait condition
+                    try:
+                        self.logger.info("🚨 Final attempt: navigation with no wait condition")
+                        await self.page.goto(url, timeout=10000)
+                        self.current_url = url
+                        title = await self.page.title()
+                        self.logger.info(f"✅ Final attempt succeeded: {title}")
+                        return True
+                    except:
+                        self.logger.error("❌ Final navigation attempt also failed")
+                        return False
+                continue
+                
+            except Exception as e:
+                self.logger.error(f"❌ Failed to navigate to {url} with {strategy}: {e}")
+                if i == len(wait_strategies) - 1:
+                    return False
+                continue
+        
+        return False
+    
+    async def navigate_to_smart(self, url: str) -> bool:
+        """
+        Smart navigation that chooses the best wait condition based on the URL
+        """
+        self.logger.info(f"🧠 Smart navigation to: {url}")
+        
+        # Determine best wait condition based on common site patterns
+        if any(domain in url.lower() for domain in ['linkedin', 'facebook', 'twitter', 'instagram']):
+            wait_condition = "domcontentloaded"  # Social sites often have continuous loading
+            self.logger.info("📱 Detected social media site - using domcontentloaded")
+        elif any(pattern in url.lower() for pattern in ['spa', 'app', 'react', 'angular', 'vue']):
+            wait_condition = "domcontentloaded"  # SPAs often have continuous network activity
+            self.logger.info("⚛️  Detected SPA patterns - using domcontentloaded")
+        elif any(pattern in url.lower() for pattern in ['shop', 'store', 'ecommerce', 'amazon']):
+            wait_condition = "domcontentloaded"  # E-commerce sites often load additional content
+            self.logger.info("🛒 Detected e-commerce site - using domcontentloaded")
+        elif any(pattern in url.lower() for pattern in ['law', 'legal', 'firm', 'attorney', 'lawyer']):
+            wait_condition = "load"  # Law firms often have complex loading - use basic load
+            self.logger.info("⚖️  Detected law firm site - using basic load")
+        elif any(pattern in url.lower() for pattern in ['wordpress', 'wp-', 'wix', 'squarespace']):
+            wait_condition = "domcontentloaded"  # CMS sites often have dynamic loading
+            self.logger.info("📝 Detected CMS site - using domcontentloaded")
+        elif 'gibsondunn' in url.lower():
+            wait_condition = "domcontentloaded"  # Use standard navigation for Gibson Dunn
+            self.logger.info("🏢 Detected Gibson Dunn site - using domcontentloaded")
+        else:
+            wait_condition = "domcontentloaded"  # Changed default to be more reliable
+            self.logger.info("🌐 Using safe default: domcontentloaded")
+        
+        return await self.navigate_to(url, wait_condition)
+    
+    async def navigate_to_fast(self, url: str) -> bool:
+        """
+        Ultra-fast navigation that doesn't wait for any conditions
+        """
+        self.logger.info(f"⚡ Ultra-fast navigation to: {url}")
+        self.logger.info("🔧 Using 3-second timeout with 'commit' wait condition")
+        
         try:
-            self.logger.info(f"🌐 Navigating to: {url}")
-            self.logger.info(f"⏳ Wait condition: {wait_until}")
+            # Add detailed pre-navigation logging
+            self.logger.info("📡 Starting page.goto() call...")
+            start_time = asyncio.get_event_loop().time()
             
-            await self.page.goto(url, wait_until=wait_until)
+            # Navigate with very aggressive timeout
+            await self.page.goto(url, timeout=3000, wait_until="commit")
+            
+            end_time = asyncio.get_event_loop().time()
+            elapsed = end_time - start_time
+            self.logger.info(f"✅ page.goto() completed in {elapsed:.2f}s")
+            
             self.current_url = url
             
-            # Get page title for confirmation
-            title = await self.page.title()
-            self.logger.info(f"✅ Successfully navigated to: {url}")
-            self.logger.info(f"📄 Page title: {title}")
+            # Give it a moment to start loading
+            self.logger.info("⏳ Waiting 1 second for initial content...")
+            await asyncio.sleep(1)
+            
+            # Check if we can get basic page info
+            try:
+                self.logger.info("📄 Attempting to get page title...")
+                title = await self.page.title()
+                self.logger.info(f"⚡ Fast navigation successful: {title}")
+                
+                # Check if page has basic content
+                self.logger.info("🔍 Checking for basic page content...")
+                html = await self.page.content()
+                if len(html) > 1000:
+                    self.logger.info(f"📝 Page content looks good ({len(html)} chars)")
+                else:
+                    self.logger.warning(f"⚠️  Page content seems minimal ({len(html)} chars)")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️  Could not get page title: {e}")
+                title = "Unknown"
+                self.logger.info("⚡ Fast navigation completed (title unavailable)")
             
             return True
-        except PlaywrightTimeout:
-            self.logger.error(f"❌ Timeout navigating to {url} (wait condition: {wait_until})")
+            
+        except asyncio.TimeoutError:
+            self.logger.error("❌ Fast navigation timed out after 3 seconds")
             return False
         except Exception as e:
-            self.logger.error(f"❌ Failed to navigate to {url}: {e}")
+            self.logger.error(f"❌ Fast navigation failed: {type(e).__name__}: {e}")
             return False
+    
+    async def navigate_to_minimal(self, url: str) -> bool:
+        """
+        Absolutely minimal navigation with maximum logging and diagnostics
+        """
+        self.logger.info(f"🚀 MINIMAL navigation to: {url}")
+        
+        # First, test basic connectivity
+        self.logger.info("🔍 DIAGNOSTIC: Testing basic connectivity...")
+        try:
+            import socket
+            import urllib.parse
+            
+            parsed = urllib.parse.urlparse(url)
+            hostname = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+            
+            self.logger.info(f"🌐 Testing connection to {hostname}:{port}")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            result = sock.connect_ex((hostname, port))
+            sock.close()
+            
+            if result == 0:
+                self.logger.info("✅ Network connectivity confirmed")
+            else:
+                self.logger.error(f"❌ Cannot connect to {hostname}:{port} (error: {result})")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Connectivity test failed: {e}")
+            return False
+        
+        # Try navigation with aggressive settings
+        self.logger.info("🔧 Using 2-second timeout with NO wait condition")
+        
+        try:
+            # Set a very short page timeout
+            self.logger.info("⚙️  Setting page timeout to 2 seconds...")
+            self.page.set_default_timeout(2000)
+            
+            # Try the most basic navigation possible
+            self.logger.info("📡 Attempting page.goto() with no wait condition...")
+            start_time = asyncio.get_event_loop().time()
+            
+            # Use asyncio.wait_for for additional timeout control
+            await asyncio.wait_for(
+                self.page.goto(url, timeout=2000),
+                timeout=3.0  # Extra layer of timeout
+            )
+            
+            end_time = asyncio.get_event_loop().time()
+            elapsed = end_time - start_time
+            self.logger.info(f"✅ Minimal navigation completed in {elapsed:.2f}s")
+            
+            self.current_url = url
+            return True
+            
+        except asyncio.TimeoutError:
+            self.logger.error("❌ Minimal navigation timed out (asyncio.wait_for)")
+        except Exception as e:
+            self.logger.error(f"❌ Minimal navigation failed: {type(e).__name__}: {e}")
+            
+        # Reset timeout
+        try:
+            self.page.set_default_timeout(10000)
+        except:
+            pass
+            
+        return False
     
     async def wait_for_selector(self, selector: str, timeout: int = None) -> bool:
         """Wait for element to appear"""

@@ -21,8 +21,8 @@ from .models.data_models import (
     ScrapingTemplate
 )
 
-# Import improved CLI
-from .improved_cli import main as improved_cli_main
+# Import unified CLI
+from .unified_cli import main as unified_cli_main
 
 # Make key classes available at package level
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     'ScrapedItem',
     'ScrapeResult',
     'ScrapingTemplate',
-    'improved_cli_main'
+    'unified_cli_main'
 ]

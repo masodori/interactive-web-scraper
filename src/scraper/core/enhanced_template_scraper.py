@@ -32,13 +32,13 @@ from ..extractors.pattern_extractor import PatternExtractor
 from .base_scraper import BaseScraper
 from .requests_scraper import RequestScraper
 from .playwright_scraper import PlaywrightScraper, PlaywrightExtractor
-from .template_scraper import TemplateScraper
+# Removed import of deprecated template_scraper
 
 # Import exporters
 from ..exporters import JsonExporter, CsvExporter, ExcelExporter, HtmlExporter
 
 
-class EnhancedTemplateScraper(TemplateScraper):
+class EnhancedTemplateScraper:
     """Enhanced template scraper with all new features"""
     
     def __init__(self, engine: str = 'selenium', headless: bool = True, 
@@ -174,9 +174,50 @@ class EnhancedTemplateScraper(TemplateScraper):
             try:
                 self.logger.info("🚀 Starting async scraping process...")
                 
-                # Navigate to URL
-                self.logger.info("🌐 Navigating to target URL...")
-                await self.playwright_scraper.navigate_to(template.site_info.url)
+                # Navigate to URL with multiple fallback strategies and detailed logging
+                url = template.site_info.url
+                self.logger.info(f"🌐 Starting multi-strategy navigation to: {url}")
+                navigation_success = False
+                
+                # Strategy 1: Smart navigation
+                self.logger.info("📋 ATTEMPT 1: Smart navigation strategy...")
+                try:
+                    navigation_success = await self.playwright_scraper.navigate_to_smart(url)
+                    if navigation_success:
+                        self.logger.info("✅ Smart navigation succeeded!")
+                except Exception as e:
+                    self.logger.error(f"❌ Smart navigation threw exception: {e}")
+                
+                # Strategy 2: Ultra-fast navigation
+                if not navigation_success:
+                    self.logger.info("📋 ATTEMPT 2: Ultra-fast navigation...")
+                    try:
+                        navigation_success = await self.playwright_scraper.navigate_to_fast(url)
+                        if navigation_success:
+                            self.logger.info("✅ Ultra-fast navigation succeeded!")
+                    except Exception as e:
+                        self.logger.error(f"❌ Ultra-fast navigation threw exception: {e}")
+                
+                # Strategy 3: Minimal navigation
+                if not navigation_success:
+                    self.logger.info("📋 ATTEMPT 3: Minimal navigation (last resort)...")
+                    try:
+                        navigation_success = await self.playwright_scraper.navigate_to_minimal(url)
+                        if navigation_success:
+                            self.logger.info("✅ Minimal navigation succeeded!")
+                    except Exception as e:
+                        self.logger.error(f"❌ Minimal navigation threw exception: {e}")
+                
+                # Final check
+                if not navigation_success:
+                    self.logger.error("❌ ALL NAVIGATION METHODS FAILED")
+                    self.logger.error("🔍 Possible issues:")
+                    self.logger.error("   - Network connectivity problems")
+                    self.logger.error("   - Site blocking automated requests")
+                    self.logger.error("   - Playwright browser issues")
+                    self.logger.error("   - Firewall/proxy interference")
+                    errors.append(f"Failed to navigate to {url} after trying all methods")
+                    return
                 
                 # Handle cookies
                 self.logger.info("🍪 Handling cookie banners...")

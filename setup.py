@@ -62,8 +62,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "scraper=scraper.improved_cli:main",
-            "scraper-improved=scraper.improved_cli:main",
+            "scraper=scraper.unified_cli:main",
         ],
     },
     include_package_data=True,

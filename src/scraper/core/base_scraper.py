@@ -41,7 +41,7 @@ class BaseScraper:
             options: Custom Chrome options to use.
         """
         self.logger = logging.getLogger(f'{__name__}.BaseScraper')
-        self.config = Config
+        self.config = Config()
         self.driver = self._init_driver(headless, options)
         self.wait = WebDriverWait(self.driver, self.config.DEFAULT_TIMEOUT)
         self.cookie_handler = CookieHandler(self.driver, self.config)
