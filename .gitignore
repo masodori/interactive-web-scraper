@@ -72,3 +72,4 @@ ehthumbs_vista.db
 .env.*
 secrets.py
 secrets.ini
+interactive-web-scraper/
