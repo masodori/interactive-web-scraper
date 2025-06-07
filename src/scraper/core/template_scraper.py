@@ -15,6 +15,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    ElementNotInteractableException,
+)
 
 # Engine-specific imports
 from .base_scraper import BaseScraper
